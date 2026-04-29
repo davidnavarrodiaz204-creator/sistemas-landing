@@ -29,6 +29,9 @@ export default function Navbar() {
           <button onClick={() => scrollTo('productos')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Productos
           </button>
+          <button onClick={() => scrollTo('sistema-accion')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
+            Sistema en acción
+          </button>
           <button onClick={() => scrollTo('planes')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Planes
           </button>
