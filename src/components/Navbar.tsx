@@ -2,42 +2,47 @@
 
 import { useState } from 'react';
 import { Menu, X, Store } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
 
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    setIsOpen(false);
+  };
+
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-      className="navbar fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 h-14 sm:h-16"
-    >
+    <nav className="navbar fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 h-14 sm:h-16">
       <div className="max-w-7xl mx-auto flex items-center justify-between h-full">
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => scrollTo('hero')}
+          className="flex items-center gap-2 cursor-pointer bg-transparent border-none"
+        >
           <Store className="w-8 h-8 text-blue-400" />
           <span className="text-xl font-bold gradient-text">POS Perú Digital</span>
-        </div>
+        </button>
 
         <div className="hidden md:flex items-center gap-8">
-          <a href="#beneficios" className="text-gray-300 hover:text-white transition text-sm">
+          <button onClick={() => scrollTo('beneficios')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Beneficios
-          </a>
-          <a href="#productos" className="text-gray-300 hover:text-white transition text-sm">
+          </button>
+          <button onClick={() => scrollTo('productos')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Productos
-          </a>
-          <a href="#planes" className="text-gray-300 hover:text-white transition text-sm">
+          </button>
+          <button onClick={() => scrollTo('planes')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Planes
-          </a>
-          <a href="#contacto" className="text-gray-300 hover:text-white transition text-sm">
+          </button>
+          <button onClick={() => scrollTo('faq')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
+            FAQ
+          </button>
+          <button onClick={() => scrollTo('contacto')} className="text-gray-300 hover:text-white transition text-sm cursor-pointer bg-transparent border-none">
             Contacto
-          </a>
+          </button>
           <a
             href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999'}?text=${encodeURIComponent('Hola, quiero información sobre sus sistemas POS para mi negocio.')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-primary text-white text-sm font-semibold px-5 py-2 rounded-lg"
+            className="btn-primary text-white text-sm font-semibold px-5 py-2 rounded-full inline-flex items-center cursor-pointer"
           >
             Contactar
           </a>
@@ -45,35 +50,33 @@ export default function Navbar() {
 
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="md:hidden text-white"
+          className="md:hidden text-white cursor-pointer bg-transparent border-none"
         >
           {isOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
 
       {isOpen && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
-          className="md:hidden bg-black/95 backdrop-blur-lg border-t border-white/10"
-        >
+        <div className="md:hidden bg-black/95 backdrop-blur-lg border-t border-white/10">
           <div className="px-4 py-4 space-y-3">
-            <a href="#beneficios" className="block text-gray-300 hover:text-white py-2" onClick={() => setIsOpen(false)}>
+            <button onClick={() => scrollTo('beneficios')} className="block text-gray-300 hover:text-white py-2 text-left w-full cursor-pointer bg-transparent border-none">
               Beneficios
-            </a>
-            <a href="#productos" className="block text-gray-300 hover:text-white py-2" onClick={() => setIsOpen(false)}>
+            </button>
+            <button onClick={() => scrollTo('productos')} className="block text-gray-300 hover:text-white py-2 text-left w-full cursor-pointer bg-transparent border-none">
               Productos
-            </a>
-            <a href="#planes" className="block text-gray-300 hover:text-white py-2" onClick={() => setIsOpen(false)}>
+            </button>
+            <button onClick={() => scrollTo('planes')} className="block text-gray-300 hover:text-white py-2 text-left w-full cursor-pointer bg-transparent border-none">
               Planes
-            </a>
-            <a href="#contacto" className="block text-gray-300 hover:text-white py-2" onClick={() => setIsOpen(false)}>
+            </button>
+            <button onClick={() => scrollTo('faq')} className="block text-gray-300 hover:text-white py-2 text-left w-full cursor-pointer bg-transparent border-none">
+              FAQ
+            </button>
+            <button onClick={() => scrollTo('contacto')} className="block text-gray-300 hover:text-white py-2 text-left w-full cursor-pointer bg-transparent border-none">
               Contacto
-            </a>
+            </button>
           </div>
-        </motion.div>
+        </div>
       )}
-    </motion.nav>
+    </nav>
   );
 }

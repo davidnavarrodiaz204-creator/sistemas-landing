@@ -1,13 +1,24 @@
 # POS Perú Digital - Landing Page
 
-Landing page moderna para sistemas POS y ERP en Perú.
+Landing page moderna y optimizada para conversión de sistemas POS y ERP en Perú.
 
 ## Tecnologías
 
-- Next.js 15
+- Next.js 16
 - TypeScript
 - TailwindCSS
+- Framer Motion
 - Lucide React
+
+## Características
+
+- Diseño Apple/SaaS premium
+- 100% responsive (móvil, tablet, desktop)
+- Animaciones suaves con Framer Motion
+- Optimizada para conversión (ventas)
+- Prueba social y FAQ
+- Navegación suave
+- Glassmorphism oscuro
 
 ## Configuración
 
@@ -21,7 +32,7 @@ Landing page moderna para sistemas POS y ERP en Perú.
    ```
    NEXT_PUBLIC_DEMO_FERROPOS_URL=https://tu-demo-ferrepos.vercel.app
    NEXT_PUBLIC_DEMO_RESTAURANTE_URL=https://tu-demo-restaurante.vercel.app
-   NEXT_PUBLIC_WHATSAPP_NUMBER=51987654321
+   NEXT_PUBLIC_WHATSAPP_NUMBER=51999999999
    NEXT_PUBLIC_CONTACT_EMAIL=contacto@tudominio.com
    ```
 
@@ -64,7 +75,21 @@ src/
     ├── Hero.tsx
     ├── Beneficios.tsx
     ├── Productos.tsx
+    ├── ComoFunciona.tsx
+    ├── PruebaSocial.tsx
     ├── Planes.tsx
+    ├── FAQ.tsx
     ├── Contacto.tsx
     └── Footer.tsx
 ```
+
+## Secciones
+
+1. Hero - Título, subtítulo, botones de demo y WhatsApp
+2. Beneficios - 9 beneficios clave
+3. Productos - FERROPOS ERP y Restaurante POS
+4. Cómo funciona - 4 pasos
+5. Prueba Social - Negocios que usan el sistema
+6. Planes - Inicio, Pro, Premium
+7. FAQ - 8 preguntas frecuentes
+8. Contacto - WhatsApp y correo

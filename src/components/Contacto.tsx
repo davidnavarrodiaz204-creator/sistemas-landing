@@ -7,9 +7,8 @@ export default function Contacto() {
   const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999';
   const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'contacto@ejemplo.com';
   const whatsappMessage = 'Hola, quiero información sobre sus sistemas POS para mi negocio.';
-
   return (
-    <section className="section-spacing px-4 sm:px-6 lg:px-8">
+    <section id="contacto" className="section-spacing px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto text-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

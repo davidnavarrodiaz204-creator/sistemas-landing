@@ -4,6 +4,7 @@ import Productos from '@/components/Productos';
 import ComoFunciona from '@/components/ComoFunciona';
 import PruebaSocial from '@/components/PruebaSocial';
 import Planes from '@/components/Planes';
+import FAQ from '@/components/FAQ';
 import Contacto from '@/components/Contacto';
 
 export default function Home() {
@@ -15,6 +16,7 @@ export default function Home() {
       <ComoFunciona />
       <PruebaSocial />
       <Planes />
+      <FAQ />
       <Contacto />
     </div>
   );

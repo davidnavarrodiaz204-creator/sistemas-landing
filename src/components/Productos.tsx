@@ -24,7 +24,7 @@ const productos = [
 
 export default function Productos() {
   return (
-    <section className="section-spacing px-4 sm:px-6 lg:px-8">
+    <section id="productos" className="section-spacing px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
