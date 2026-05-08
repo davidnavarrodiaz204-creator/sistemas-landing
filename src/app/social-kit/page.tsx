@@ -1,151 +1,319 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toPng } from 'html-to-image';
 import { FactusysLogoNeon } from '@/components/BrandLogo';
 import { allPosts } from '@/components/social/SocialPosts';
 import { allStories } from '@/components/social/SocialStories';
 import { coverItems } from '@/components/social/FacebookCover';
-import { X, Maximize2 } from 'lucide-react';
+import InternalGuard from '@/components/InternalGuard';
+import { X, Download, Eye, Grid3X3, Film, Tag, Check } from 'lucide-react';
 
-const scale = 0.35;
+type AssetItem = {
+  id: string;
+  name: string;
+  size: string;
+  component: React.ComponentType;
+};
 
-function PreviewCard({ item }: { item: { id: string; name: string; size: string; component: React.ComponentType } }) {
-  const [open, setOpen] = useState(false);
-  const Component = item.component;
+const categories: { id: string; label: string; icon: React.ComponentType<{ size?: number }>; items: AssetItem[] }[] = [
+  { id: 'posts', label: 'Posts', icon: Grid3X3, items: allPosts },
+  { id: 'stories', label: 'Historias', icon: Film, items: allStories },
+  { id: 'branding', label: 'Branding', icon: Tag, items: coverItems },
+];
 
+function ItemCard({ item, onView, onDownload }: {
+  item: AssetItem;
+  onView: (item: AssetItem) => void;
+  onDownload: (item: AssetItem) => void;
+}) {
   return (
-    <>
-      <div className="glass-card rounded-xl overflow-hidden group cursor-pointer" onClick={() => setOpen(true)}>
-        <div className="flex items-center justify-center overflow-hidden bg-black p-4" style={{ minHeight: item.id === 'facebook-cover' ? '180px' : '280px' }}>
-          <div style={{ transform: `scale(${item.id === 'facebook-cover' ? 0.25 : scale})`, transformOrigin: item.id === 'facebook-cover' ? 'left center' : 'center center' }}>
-            <Component />
-          </div>
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="group relative bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden
+                 hover:border-[#00e676]/30 hover:bg-white/[0.04] transition-all duration-500
+                 cursor-pointer"
+      onClick={() => onView(item)}
+    >
+      <div className="relative aspect-square bg-black/40 flex items-center justify-center overflow-hidden p-8">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none z-10" />
+        <div
+          className="flex-shrink-0 transition-transform duration-700 group-hover:scale-[1.02]"
+          style={{ transform: 'scale(0.32)', transformOrigin: 'center' }}
+        >
+          <item.component />
         </div>
-        <div className="p-3 flex items-center justify-between">
-          <div>
-            <p className="text-white text-sm font-medium truncate">{item.name}</p>
-            <p className="text-gray-500 text-xs">{item.size}</p>
-          </div>
+
+        <div className="absolute inset-0 z-20 flex items-center justify-center gap-3
+                        opacity-0 group-hover:opacity-100 transition-all duration-300
+                        bg-black/30 backdrop-blur-[2px]">
           <button
-            onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition cursor-pointer bg-transparent border-none"
+            onClick={(e) => { e.stopPropagation(); onView(item); }}
+            className="p-3 rounded-xl bg-white/10 backdrop-blur-md text-white
+                       hover:bg-[#00e676] hover:text-black transition-all duration-300
+                       hover:scale-110 active:scale-95 cursor-pointer border-none"
+            title="Previsualizar"
           >
-            <Maximize2 size={14} />
+            <Eye size={18} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDownload(item); }}
+            className="p-3 rounded-xl bg-white/10 backdrop-blur-md text-white
+                       hover:bg-[#00e676] hover:text-black transition-all duration-300
+                       hover:scale-110 active:scale-95 cursor-pointer border-none"
+            title="Descargar PNG"
+          >
+            <Download size={18} />
           </button>
         </div>
       </div>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="relative max-w-[95vw] max-h-[95vh] overflow-auto rounded-2xl"
-            onClick={(e) => e.stopPropagation()}
+      <div className="p-4 sm:p-5">
+        <p className="text-white text-sm font-medium truncate group-hover:text-[#00e676] transition-colors">
+          {item.name}
+        </p>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-gray-600 text-xs">{item.size}</span>
+          <span className="w-1 h-1 rounded-full bg-gray-700" />
+          <span className="text-gray-600 text-xs">PNG</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function PreviewModal({ item, onClose, autoDownload }: {
+  item: AssetItem;
+  onClose: () => void;
+  autoDownload: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [done, setDone] = useState(false);
+  const Component = item.component;
+
+  const exportPng = useCallback(async () => {
+    if (!ref.current || exporting) return;
+    setExporting(true);
+    try {
+      await document.fonts.ready;
+      const [w, h] = item.size.split('×').map(Number);
+      const dataUrl = await toPng(ref.current, {
+        width: w,
+        height: h,
+        pixelRatio: 2,
+        cacheBust: true,
+      });
+      const link = document.createElement('a');
+      link.download = `factusys-${item.id}.png`;
+      link.href = dataUrl;
+      link.click();
+      setDone(true);
+      setTimeout(() => setDone(false), 2000);
+    } catch {
+      // fallback: user can screenshot
+    } finally {
+      setExporting(false);
+    }
+  }, [item, exporting]);
+
+  useEffect(() => {
+    if (autoDownload) {
+      const t = setTimeout(() => exportPng(), 600);
+      return () => clearTimeout(t);
+    }
+  }, [autoDownload, exportPng]);
+
+  const dims = item.size.split('×');
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/[0.06] shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-white font-medium text-sm truncate max-w-[200px] sm:max-w-none">
+            {item.name}
+          </span>
+          <span className="text-gray-600 text-xs hidden sm:inline">{item.size} px</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); exportPng(); }}
+            disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300
+                       bg-[#00e676] text-black hover:bg-[#00c853] disabled:opacity-50
+                       active:scale-95 cursor-pointer border-none"
           >
-            <div className="sticky top-2 right-2 flex justify-end mb-2">
+            {done ? (
+              <><Check size={16} /> Exportado</>
+            ) : exporting ? (
+              <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+            ) : (
+              <><Download size={16} /> Exportar PNG</>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-white/10 text-gray-400 hover:text-white transition-all
+                       cursor-pointer bg-transparent border-none"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          ref={ref}
+          className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50 flex-shrink-0"
+          style={{ maxWidth: `${dims[0]}px` }}
+        >
+          <Component />
+        </div>
+      </div>
+
+      <div className="shrink-0 text-center py-2 text-gray-600 text-xs border-t border-white/[0.06]">
+        La exportación genera PNG a 2× de resolución para calidad retina
+      </div>
+    </motion.div>
+  );
+}
+
+function SocialKitContent() {
+  const [activeCategory, setActiveCategory] = useState('posts');
+  const [selectedItem, setSelectedItem] = useState<AssetItem | null>(null);
+  const [autoDownload, setAutoDownload] = useState(false);
+
+  const currentCategory = categories.find(c => c.id === activeCategory);
+  const items = currentCategory?.items || [];
+
+  const handleView = useCallback((item: AssetItem) => {
+    setAutoDownload(false);
+    setSelectedItem(item);
+  }, []);
+
+  const handleDownload = useCallback((item: AssetItem) => {
+    setAutoDownload(true);
+    setSelectedItem(item);
+  }, []);
+
+  return (
+    <InternalGuard>
+    <div className="min-h-screen bg-black pt-24 pb-20">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 left-1/3 w-[700px] h-[700px] bg-[#00e676]/[0.03] rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 right-1/4 w-[600px] h-[600px] bg-blue-500/[0.02] rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-10">
+          <div className="flex justify-center mb-5">
+            <FactusysLogoNeon />
+          </div>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-3 tracking-tight">
+            Panel de Branding
+          </h1>
+          <p className="text-gray-400 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
+            Assets visuales de FACTUSYS listos para exportar. Previsualiza, descarga en PNG y usa en tus redes sociales.
+          </p>
+        </div>
+
+        <div className="flex justify-center mb-10">
+          <div className="inline-flex bg-white/[0.03] border border-white/[0.06] rounded-xl p-1 gap-0.5">
+            {categories.map(cat => (
               <button
-                onClick={() => setOpen(false)}
-                className="p-2 rounded-full bg-black/60 backdrop-blur text-white hover:bg-white/20 transition cursor-pointer border-none"
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-300 cursor-pointer border-none ${
+                  activeCategory === cat.id
+                    ? 'bg-[#00e676] text-black shadow-lg shadow-[#00e676]/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                }`}
               >
-                <X size={20} />
+                <cat.icon size={15} />
+                <span className="hidden sm:inline">{cat.label}</span>
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${
+                  activeCategory === cat.id ? 'bg-black/15 text-black/70' : 'bg-white/[0.06] text-gray-500'
+                }`}>
+                  {cat.items.length}
+                </span>
               </button>
+            ))}
+          </div>
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeCategory}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className={`grid gap-5 sm:gap-6 ${
+              activeCategory === 'branding'
+                ? 'grid-cols-1 lg:grid-cols-2'
+                : activeCategory === 'stories'
+                  ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                  : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
+            }`}>
+              {items.map(item => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onView={handleView}
+                  onDownload={handleDownload}
+                />
+              ))}
             </div>
-            <div className="rounded-xl overflow-hidden shadow-2xl">
-              <Component />
+          </motion.div>
+        </AnimatePresence>
+
+        <div className="mt-12 glass-card rounded-2xl p-5 sm:p-6 border-white/[0.04]">
+          <div className="flex items-start gap-4">
+            <div className="w-8 h-8 rounded-lg bg-[#00e676]/10 border border-[#00e676]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Download size={15} className="text-[#00e676]" />
             </div>
-            <div className="mt-2 flex items-center justify-between text-gray-400 text-sm px-1">
-              <span>{item.name} — {item.size}</span>
-              <span className="text-gray-600">Captura de pantalla para usar</span>
+            <div>
+              <h3 className="text-white text-sm font-semibold mb-1">Exportar assets</h3>
+              <p className="text-gray-500 text-xs leading-relaxed">
+                Cada pieza se exporta como PNG a 2× de resolución (retina). 
+                Usa los botones <strong className="text-gray-400">Previsualizar</strong> para ver en detalle o{' '}
+                <strong className="text-gray-400">Descargar</strong> para exportar directo.
+                Los assets están optimizados para Facebook, Instagram y WhatsApp Business.
+              </p>
             </div>
           </div>
         </div>
-      )}
-    </>
+      </div>
+
+      <AnimatePresence>
+        {selectedItem && (
+          <PreviewModal
+            item={selectedItem}
+            onClose={() => setSelectedItem(null)}
+            autoDownload={autoDownload}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+    </InternalGuard>
   );
 }
 
 export default function SocialKitPage() {
-  return (
-    <div className="min-h-screen bg-black pt-20 sm:pt-24 pb-16">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <div className="flex justify-center mb-4">
-            <FactusysLogoNeon size="lg" />
-          </div>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-3">
-            Kit de Redes Sociales
-          </h1>
-          <p className="text-gray-400 text-base max-w-2xl mx-auto">
-            Assets visuales listos para capturar y usar en Facebook, Instagram y WhatsApp Business.
-            <br />
-            Haz clic en cada pieza para verla en tamaño real.
-          </p>
-        </div>
-
-        {/* Profile & Cover */}
-        <section className="mb-14">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1 h-6 bg-[#00e676] rounded-full" />
-            <h2 className="text-white text-xl font-semibold">Perfil y Portada</h2>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {coverItems.map((item) => (
-              <PreviewCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* Posts */}
-        <section className="mb-14">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1 h-6 bg-[#00e676] rounded-full" />
-            <h2 className="text-white text-xl font-semibold">Posts — Facebook / Instagram</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-            {allPosts.map((item) => (
-              <PreviewCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* Stories */}
-        <section className="mb-14">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1 h-6 bg-[#00e676] rounded-full" />
-            <h2 className="text-white text-xl font-semibold">Historias — Instagram / Facebook</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {allStories.map((item) => (
-              <PreviewCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* Instructions */}
-        <div className="glass-card rounded-2xl p-6 sm:p-8 border-white/5">
-          <h3 className="text-white font-semibold text-lg mb-3">Cómo usar estos assets</h3>
-          <ol className="space-y-2 text-gray-400 text-sm">
-            <li className="flex items-start gap-2">
-              <span className="text-[#00e676] font-bold">1.</span>
-              <span>Haz clic en cualquier pieza para verla en tamaño real (1:1).</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-[#00e676] font-bold">2.</span>
-              <span>Toma una captura de pantalla (o usa las herramientas de desarrollo para exportar).</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-[#00e676] font-bold">3.</span>
-              <span>Sube la imagen directamente a Facebook, Instagram o WhatsApp Business.</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-[#00e676] font-bold">4.</span>
-              <span>Todos los diseños mantienen la identidad visual FACTUSYS.</span>
-            </li>
-          </ol>
-        </div>
-      </div>
-    </div>
-  );
+  return <SocialKitContent />;
 }
