@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 
 export default function WhatsAppFloat() {
   const phoneNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51987454769';
-  const message = encodeURIComponent('Hola, quiero información sobre el sistema POS');
+  const message = encodeURIComponent('Hola, quiero información sobre FACTUSYS para mi negocio.');
 
   return (
     <motion.a

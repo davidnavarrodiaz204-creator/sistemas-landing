@@ -1,24 +1,24 @@
 'use client';
 
-import { ShoppingCart, ChefHat, ExternalLink, Check, Store, Utensils } from 'lucide-react';
+import { ExternalLink, Check, Store, Utensils } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const productos = [
   {
     icon: Store,
-    title: 'FERROPOS ERP Perú',
-    desc: 'Sistema para ferreterías, electrónicas y tiendas con inventario, ventas, caja, clientes, SUNAT, PDF, WhatsApp y reportes.',
+    title: 'FACTUSYS FERRO',
+    desc: 'Sistema POS para ferreterías, tiendas y negocios de retail. Controla inventario, ventas, caja, clientes y facturación SUNAT desde un solo lugar.',
     demoUrl: process.env.NEXT_PUBLIC_DEMO_FERROPOS_URL || '#',
     features: ['Facturación SUNAT', 'Control de inventario', 'Gestión de caja', 'Clientes y créditos', 'Reportes avanzados'],
     color: 'blue',
   },
   {
     icon: Utensils,
-    title: 'Restaurante POS Perú',
-    desc: 'Sistema para pollerías, restaurantes y negocios de comida con mesas, pedidos, cocina, caja, comprobantes y facturación electrónica.',
+    title: 'FACTUSYS RESTO',
+    desc: 'Sistema POS para restaurantes, pollerías y negocios de comida. Gestiona mesas, pedidos, cocina, caja y facturación electrónica.',
     demoUrl: process.env.NEXT_PUBLIC_DEMO_RESTAURANTE_URL || '#',
     features: ['Gestión de mesas', 'Pedidos a cocina', 'Comandas digitales', 'Facturación electrónica', 'Control de caja'],
-    color: 'purple',
+    color: 'green',
   },
 ];
 
@@ -55,10 +55,10 @@ export default function Productos() {
                 <div className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-colors ${
                   prod.color === 'blue'
                     ? 'bg-blue-500/10 group-hover:bg-blue-500/20'
-                    : 'bg-purple-500/10 group-hover:bg-purple-500/20'
+                    : 'bg-neon/10 group-hover:bg-neon/20'
                 } flex-shrink-0`}>
                   <prod.icon size={24} className={`sm:w-8 sm:h-8 ${
-                    prod.color === 'blue' ? 'text-blue-400' : 'text-purple-400'
+                    prod.color === 'blue' ? 'text-blue-400' : 'text-neon'
                   }`} />
                 </div>
                 <div>

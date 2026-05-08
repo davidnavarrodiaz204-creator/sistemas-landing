@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Zap } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const planes = [
@@ -36,8 +36,11 @@ export default function Planes() {
           transition={{ duration: 0.8 }}
           className="text-center mb-10 sm:mb-16"
         >
+          <div className="mb-4">
+            <span className="brand-section-label">Planes</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="gradient-text">Planes</span>
+            <span className="brand-gradient-text">Planes</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
             Cotización personalizada según tus necesidades
@@ -52,12 +55,12 @@ export default function Planes() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7, delay: idx * 0.15 }}
-              className={`glass-card rounded-2xl sm:rounded-3xl p-6 sm:p-8 relative ${
-                plan.destacado ? 'border-blue-500/30 ring-1 ring-blue-500/20' : 'border-white/5'
-              }`}
+               className={`glass-card rounded-2xl sm:rounded-3xl p-6 sm:p-8 relative ${
+                 plan.destacado ? 'border-neon/30 ring-1 ring-neon/20' : 'border-white/5'
+               }`}
             >
               {plan.destacado && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-violet-500 text-white text-xs sm:text-sm font-medium px-4 sm:px-6 py-1 sm:py-1.5 rounded-full">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 btn-neon text-black text-xs sm:text-sm font-semibold px-4 sm:px-6 py-1 sm:py-1.5 rounded-full">
                   Recomendado
                 </div>
               )}

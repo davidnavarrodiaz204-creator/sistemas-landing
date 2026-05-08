@@ -16,10 +16,13 @@ export default function Contacto() {
           viewport={{ once: true }}
           transition={{ duration: 0.8 }}
         >
+          <div className="mb-4">
+            <span className="brand-section-label">Contacto</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="gradient-text">Hablemos</span>
+            <span className="brand-gradient-text">Hablemos</span>
           </h2>
-          <p className="text-base sm:text-xl text-gray-400 font-light mb-8 sm:mb-12 px-2">
+          <p className="text-base sm:text-xl text-gray-400 mb-8 sm:mb-12 px-2">
             Cuéntanos sobre tu negocio y te mostramos cómo podemos ayudarte
           </p>
         </motion.div>
@@ -35,7 +38,7 @@ export default function Contacto() {
             href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-primary text-white font-medium px-8 sm:px-10 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg w-full sm:w-auto"
+            className="btn-neon text-black font-semibold px-8 sm:px-10 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg w-full sm:w-auto"
           >
             <MessageCircle size={20} className="sm:w-6 sm:h-6" />
             Contactar por WhatsApp
@@ -43,7 +46,7 @@ export default function Contacto() {
 
           <a
             href={`mailto:${contactEmail}`}
-            className="btn-secondary text-white font-medium px-8 sm:px-10 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg w-full sm:w-auto"
+            className="btn-outline text-white font-medium px-8 sm:px-10 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg w-full sm:w-auto"
           >
             <Mail size={20} className="sm:w-6 sm:h-6" />
             Enviar correo

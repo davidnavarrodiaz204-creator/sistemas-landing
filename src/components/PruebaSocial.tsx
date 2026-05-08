@@ -1,6 +1,6 @@
 'use client';
 
-import { Store, Utensils, Building2, TrendingUp } from 'lucide-react';
+import { Store, Utensils, Building2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const negocios = [
@@ -42,9 +42,9 @@ export default function PruebaSocial() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: idx * 0.1 }}
-              className="glass-card rounded-xl p-4 text-center group hover:border-blue-500/30"
+              className="glass-card rounded-xl p-4 text-center group hover:border-neon/30 transition-all duration-300"
             >
-              <negocio.icon size={24} className="sm:w-7 sm:h-7 text-gray-500 group-hover:text-blue-400 mx-auto mb-2 transition-colors" />
+              <negocio.icon size={24} className="sm:w-7 sm:h-7 text-gray-500 group-hover:text-neon mx-auto mb-2 transition-colors" />
               <p className="text-white text-xs sm:text-sm font-medium mb-0.5 truncate">{negocio.name}</p>
               <p className="text-gray-500 text-[10px] sm:text-xs">{negocio.type}</p>
             </motion.div>

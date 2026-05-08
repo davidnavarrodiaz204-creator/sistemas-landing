@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, X, Store } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
+import { FactusysLogo } from './BrandLogo';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,8 +19,7 @@ export default function Navbar() {
           onClick={() => scrollTo('hero')}
           className="flex items-center gap-2 cursor-pointer bg-transparent border-none"
         >
-          <Store className="w-8 h-8 text-blue-400" />
-          <span className="text-xl font-bold gradient-text">POS Perú Digital</span>
+          <FactusysLogo size="sm" showTagline={false} />
         </button>
 
         <div className="hidden md:flex items-center gap-8">
@@ -42,10 +42,10 @@ export default function Navbar() {
             Contacto
           </button>
           <a
-            href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999'}?text=${encodeURIComponent('Hola, quiero información sobre sus sistemas POS para mi negocio.')}`}
+            href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999'}?text=${encodeURIComponent('Hola, quiero información sobre FACTUSYS para mi negocio.')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-primary text-white text-sm font-semibold px-5 py-2 rounded-full inline-flex items-center cursor-pointer"
+            className="btn-neon text-black text-sm font-semibold px-5 py-2 rounded-full inline-flex items-center cursor-pointer"
           >
             Contactar
           </a>

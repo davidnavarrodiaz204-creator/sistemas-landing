@@ -73,8 +73,11 @@ export default function SistemaAccion() {
           transition={{ duration: 0.8 }}
           className="text-center mb-12 sm:mb-20"
         >
+          <div className="mb-4">
+            <span className="brand-section-label">Live Demo</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="gradient-text">Sistema en acción</span>
+            <span className="brand-gradient-text">Sistema en acción</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
             Presentación automática de 45 segundos
@@ -89,7 +92,7 @@ export default function SistemaAccion() {
               whileInView={{ opacity: 1, y: 0, scale: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.8, ease: [0.25, 0.1, 0.25, 1] }}
-              className="relative rounded-2xl overflow-hidden shadow-2xl shadow-blue-500/10"
+              className="relative rounded-2xl overflow-hidden shadow-2xl shadow-neon/10 brand-neon-glow"
             >
               {/* Barra de ventana estilo macOS/iOS */}
               <div className="bg-[#1c1c1e] px-4 py-3 flex items-center gap-2 border-b border-white/10">
@@ -104,9 +107,9 @@ export default function SistemaAccion() {
                   {steps.map((_, idx) => (
                     <div
                       key={idx}
-                      className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                        idx === activeIndex ? 'bg-blue-400' : 'bg-white/20'
-                      }`}
+               className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
+                         idx === activeIndex ? 'bg-neon' : 'bg-white/20'
+                       }`}
                     />
                   ))}
                 </div>
@@ -141,14 +144,14 @@ export default function SistemaAccion() {
                 transition={{ duration: 0.5, delay: idx * 0.1 }}
                 className={`cursor-pointer p-4 rounded-xl transition-all duration-300 ${
                   activeIndex === idx
-                    ? 'bg-white/5 border border-blue-500/30'
+                    ? 'bg-white/5 border border-neon/30'
                     : 'border border-transparent hover:bg-white/[0.02]'
                 }`}
                 onClick={() => setActiveIndex(idx)}
               >
                 <div className="flex items-start gap-3 sm:gap-4">
                   <div className={`p-2 rounded-lg flex-shrink-0 ${
-                    activeIndex === idx ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'
+                    activeIndex === idx ? 'bg-neon/20 text-neon' : 'bg-white/5 text-gray-500'
                   }`}>
                     <step.icon size={20} />
                   </div>

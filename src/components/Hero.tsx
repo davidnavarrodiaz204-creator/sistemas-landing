@@ -2,6 +2,7 @@
 
 import { ShoppingCart, ChefHat, MessageCircle, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { FactusysMarkNeon } from './BrandLogo';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 30 },
@@ -21,6 +22,7 @@ export default function Hero() {
   return (
     <section id="hero" className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-hidden pt-20 sm:pt-24">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,113,227,0.08)_0%,_transparent_70%)]" />
+      <div className="absolute inset-0 bg-neon-glow" />
 
       <div className="max-w-6xl mx-auto relative z-10 w-full">
         <motion.div
@@ -29,35 +31,48 @@ export default function Hero() {
           animate="animate"
           className="text-center mb-10 sm:mb-16"
         >
+          <motion.div
+            variants={fadeInUp}
+            className="flex items-center justify-center gap-2 mb-6 sm:mb-8"
+          >
+            <FactusysMarkNeon className="w-8 h-8 sm:w-10 sm:h-10" />
+            <span className="text-neon text-sm sm:text-base font-semibold tracking-[0.15em] uppercase">
+              FACTUSYS
+            </span>
+          </motion.div>
+
           <motion.p
             variants={fadeInUp}
-            className="text-blue-400 text-sm sm:text-base font-medium mb-3 sm:mb-4 tracking-wide uppercase"
+            className="text-gray-400 text-sm sm:text-base font-medium mb-3 sm:mb-4 tracking-wide uppercase"
           >
-            Para ferreterías, tiendas y restaurantes en Perú
+            Para ferreterías, restaurantes y negocios peruanos
           </motion.p>
 
           <motion.h1
             variants={fadeInUp}
             className="text-3xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 sm:mb-6 leading-tight tracking-tight"
           >
-            <span className="gradient-text">Sistemas POS y ERP</span>
+            <span className="brand-gradient-text">Sistemas POS inteligentes</span>
             <br />
-            <span className="text-white">para negocios que quieren vender más y controlar todo</span>
+            <span className="text-white">para negocios que quieren vender más</span>
           </motion.h1>
 
           <motion.p
             variants={fadeInUp}
             className="text-base sm:text-xl lg:text-2xl text-gray-300 mb-4 sm:mb-6 max-w-4xl mx-auto font-light leading-relaxed px-2"
           >
-            Controla tu caja, inventario y ventas sin errores, incluso con internet inestable.
+            Controla tu caja, inventario y facturación electrónica desde un solo lugar.
+            <br className="hidden sm:block" />
+            Diseñado para el negocio peruano.
           </motion.p>
 
-          <motion.p
+          <motion.div
             variants={fadeInUp}
-            className="text-green-400 text-sm sm:text-base font-medium mb-8 sm:mb-10"
+            className="inline-flex items-center gap-2 border border-neon/30 rounded-full px-4 py-1.5 sm:px-5 sm:py-2 mb-8 sm:mb-10"
           >
-            Implementación rápida en menos de 48 horas
-          </motion.p>
+            <span className="w-1.5 h-1.5 rounded-full bg-neon animate-pulse" />
+            <span className="text-neon text-xs sm:text-sm font-medium">Implementación en menos de 48 horas</span>
+          </motion.div>
 
           <motion.div
             variants={fadeInUp}
@@ -67,30 +82,30 @@ export default function Hero() {
               href={process.env.NEXT_PUBLIC_DEMO_FERROPOS_URL || '#'}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-primary text-white font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto"
+              className="btn-neon text-black font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base"
             >
               <ShoppingCart size={18} className="sm:w-5 sm:h-5" />
-              <span className="text-sm sm:text-base">Probar demo gratis</span>
+              Probar FACTUSYS FERRO
             </a>
 
             <a
               href={process.env.NEXT_PUBLIC_DEMO_RESTAURANTE_URL || '#'}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-primary text-white font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto"
+              className="btn-neon text-black font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base"
             >
               <ChefHat size={18} className="sm:w-5 sm:h-5" />
-              <span className="text-sm sm:text-base">Probar demo gratis</span>
+              Probar FACTUSYS RESTO
             </a>
 
             <a
-              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999'}?text=${encodeURIComponent('Hola, quiero información sobre sus sistemas POS para mi negocio.')}`}
+              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999'}?text=${encodeURIComponent('Hola, quiero información sobre FACTUSYS para mi negocio.')}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-secondary text-white font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto"
+              className="btn-outline text-white font-medium px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base"
             >
               <MessageCircle size={18} className="sm:w-5 sm:h-5" />
-              <span className="text-sm sm:text-base">Hablar por WhatsApp</span>
+              Hablar por WhatsApp
             </a>
           </motion.div>
 
@@ -161,7 +176,7 @@ function DashboardMockup() {
   );
 }
 
-function MetricCard({ icon: Icon, label, value, trend }: { icon: any; label: string; value: string; trend?: string }) {
+function MetricCard({ icon: Icon, label, value, trend }: { icon: React.ComponentType<{ size?: number; className?: string }>; label: string; value: string; trend?: string }) {
   return (
     <div className="bg-white/[0.02] rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
       <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-2">

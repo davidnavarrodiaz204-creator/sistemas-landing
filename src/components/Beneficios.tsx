@@ -26,8 +26,11 @@ export default function Beneficios() {
           transition={{ duration: 0.8 }}
           className="text-center mb-10 sm:mb-16"
         >
+          <div className="mb-4">
+            <span className="brand-section-label">Beneficios</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="gradient-text">Todo lo que necesitas</span>
+            <span className="brand-gradient-text">Todo lo que necesitas</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
             Herramientas profesionales para hacer crecer tu negocio
@@ -42,11 +45,11 @@ export default function Beneficios() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: idx * 0.08 }}
-              className="glass-card rounded-xl sm:rounded-2xl p-4 sm:p-6 group"
+              className="glass-card rounded-xl sm:rounded-2xl p-4 sm:p-6 group hover:border-neon/20 transition-all duration-300"
             >
               <div className="flex items-start gap-3 sm:gap-4">
-                <div className="p-2.5 sm:p-3 bg-blue-500/10 rounded-lg sm:rounded-xl group-hover:bg-blue-500/20 transition-colors flex-shrink-0">
-                  <item.icon size={20} className="sm:w-6 sm:h-6 text-blue-400" />
+                <div className="p-2.5 sm:p-3 bg-neon/10 rounded-lg sm:rounded-xl group-hover:bg-neon/20 transition-colors flex-shrink-0">
+                  <item.icon size={20} className="sm:w-6 sm:h-6 text-neon" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-semibold text-white mb-0.5 sm:mb-1">{item.title}</h3>

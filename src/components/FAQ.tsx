@@ -56,8 +56,11 @@ export default function FAQ() {
           transition={{ duration: 0.8 }}
           className="text-center mb-10 sm:mb-16"
         >
+          <div className="mb-4">
+            <span className="brand-section-label">FAQ</span>
+          </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="gradient-text">Preguntas frecuentes</span>
+            <span className="brand-gradient-text">Preguntas frecuentes</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
             Resolvemos tus dudas para que tomes la mejor decisión
