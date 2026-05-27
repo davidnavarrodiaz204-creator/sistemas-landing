@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, Package, Calculator, FileText, MessageCircle, ShoppingCart } from 'lucide-react';
+import { Camera, Monitor, Package, Calculator, FileText, MessageCircle, ShoppingCart } from 'lucide-react';
 
 const steps = [
   {
@@ -10,46 +10,69 @@ const steps = [
     title: 'FACTUSYS en accion',
     desc: 'Una vista rapida de las pantallas reales que usamos para vender, cobrar, controlar stock y emitir documentos.',
     icon: ShoppingCart,
-    fileName: 'pos-screenshot.png', // Imagen inicial
+    src: '/restaurante/dashboard-control-turno.png',
     isTextOnly: true,
   },
   {
     id: 1,
-    title: 'POS - Punto de venta',
-    desc: 'Busca productos, arma el carrito, elige el comprobante y cobra con efectivo, Yape, Plin, tarjeta o credito.',
+    title: 'RESTO - Punto de venta',
+    desc: 'Productos por categoria, mesas, recojo, delivery y pedido actual para vender rapido.',
     icon: Monitor,
-    fileName: 'pos-screenshot.png',
+    src: '/restaurante/pos-venta-rapida.png',
   },
   {
     id: 2,
-    title: 'Caja diaria',
-    desc: 'Controla ventas del turno, ingresos, egresos, metodos de pago y cierre de caja sin hojas sueltas.',
+    title: 'RESTO - Cocina y mesas',
+    desc: 'Controla salon, QR por mesa y comandas por estado para ordenar la operacion.',
     icon: Calculator,
-    fileName: 'caja-screenshot.png',
+    src: '/restaurante/cocina-kds.png',
   },
   {
     id: 3,
-    title: 'Inventario',
-    desc: 'Registra productos, codigos, proveedores, costos, precios, stock y reposicion desde una sola pantalla.',
+    title: 'FERRO - Resumen ejecutivo',
+    desc: 'Ventas, caja, productos, documentos y estado del negocio desde un panel claro.',
     icon: Package,
-    fileName: 'inventario-screenshot.png',
+    src: '/ferro/dashboard.png',
   },
   {
     id: 4,
-    title: 'Documentos SUNAT',
-    desc: 'Consulta boletas, facturas, tickets y notas de credito con estado, envio, impresion y descarga.',
+    title: 'FERRO - Punto de venta',
+    desc: 'Carrito, cliente, comprobante, IGV y metodos de pago pensados para ferreterias y tiendas.',
     icon: FileText,
-    fileName: 'documentos-screenshot.png',
+    src: '/ferro/pos.png',
   },
   {
     id: 5,
     title: 'Pide tu demo por WhatsApp',
     desc: 'Te mostramos FERRO o RESTO segun tu negocio y dejamos claro que necesitas para empezar.',
     icon: MessageCircle,
-    fileName: 'documentos-screenshot.png', // Mantiene la última imagen
+    src: '/ferro/documentos.png',
     isFinal: true,
   },
 ];
+
+function useImageAvailable(src: string) {
+  const [result, setResult] = useState<{ src: string; available: boolean } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const img = new window.Image();
+
+    img.onload = () => {
+      if (active) setResult({ src, available: true });
+    };
+    img.onerror = () => {
+      if (active) setResult({ src, available: false });
+    };
+    img.src = src;
+
+    return () => {
+      active = false;
+    };
+  }, [src]);
+
+  return result?.src === src ? result.available : null;
+}
 
 export default function SistemaAccion() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -63,6 +86,7 @@ export default function SistemaAccion() {
   }, []);
 
   const current = steps[activeIndex];
+  const imageAvailable = useImageAvailable(current.src);
 
   return (
     <section id="sistema-accion" className="section-spacing px-4 sm:px-6 lg:px-8">
@@ -117,18 +141,32 @@ export default function SistemaAccion() {
               </div>
 
               {/* Imagen con transición */}
-              <div className="relative bg-[#0a0a0f] aspect-video overflow-hidden">
+              <div className="showcase-media relative aspect-video overflow-hidden rounded-b-2xl">
                 <AnimatePresence mode="wait">
-                  <motion.img
-                    key={current.fileName + activeIndex}
-                    src={`/${current.fileName}`}
-                    alt={current.title}
-                    initial={{ opacity: 0, scale: 1.05 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.5, ease: "easeInOut" }}
-                    className="w-full h-full object-cover object-left-top"
-                  />
+                  {imageAvailable !== true ? (
+                    <motion.div
+                      key={`fallback-${activeIndex}`}
+                      initial={{ opacity: 0, scale: 1.02 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      transition={{ duration: 0.4, ease: 'easeInOut' }}
+                      className="showcase-fallback h-full"
+                    >
+                      <Camera size={30} />
+                      <span>Captura pendiente</span>
+                    </motion.div>
+                  ) : (
+                    <motion.img
+                      key={current.src + activeIndex}
+                      src={current.src}
+                      alt={current.title}
+                      initial={{ opacity: 0, scale: 1.03 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      transition={{ duration: 0.5, ease: 'easeInOut' }}
+                      className="h-full w-full rounded-xl object-contain object-left-top"
+                    />
+                  )}
                 </AnimatePresence>
               </div>
             </motion.div>

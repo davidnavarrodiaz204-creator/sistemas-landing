@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { useEffect, useState } from 'react';
 import {
   ExternalLink,
   Check,
@@ -26,7 +26,7 @@ const productos = [
     desc: 'POS especializado para vender rapido, controlar productos por codigo, revisar stock, manejar caja, clientes, creditos y documentos electronicos.',
     demoUrl: process.env.NEXT_PUBLIC_DEMO_FERROPOS_URL || '#',
     whatsappText: 'Hola, quiero una demo de FACTUSYS FERRO para mi ferreteria o tienda.',
-    image: '/inventario-screenshot.png',
+    image: '/ferro/dashboard.png',
     imageAlt: 'Pantalla de inventario de FACTUSYS FERRO',
     features: [
       'POS con busqueda por nombre o codigo',
@@ -50,7 +50,7 @@ const productos = [
     desc: 'POS para atender mesas, registrar pedidos, enviar comandas, cobrar rapido y mantener el control de caja y facturacion electronica.',
     demoUrl: process.env.NEXT_PUBLIC_DEMO_RESTAURANTE_URL || '#',
     whatsappText: 'Hola, quiero una demo de FACTUSYS RESTO para mi restaurante.',
-    image: '/pos-screenshot.png',
+    image: '/restaurante/pos-venta-rapida.png',
     imageAlt: 'Pantalla POS de FACTUSYS RESTO',
     features: [
       'Atencion por mesas, barra o delivery',
@@ -68,6 +68,53 @@ const productos = [
     color: 'green',
   },
 ];
+
+function useImageAvailable(src: string) {
+  const [result, setResult] = useState<{ src: string; available: boolean } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const img = new window.Image();
+
+    img.onload = () => {
+      if (active) setResult({ src, available: true });
+    };
+    img.onerror = () => {
+      if (active) setResult({ src, available: false });
+    };
+    img.src = src;
+
+    return () => {
+      active = false;
+    };
+  }, [src]);
+
+  return result?.src === src ? result.available : null;
+}
+
+function ProductScreenshot({ src, alt }: { src: string; alt: string }) {
+  const imageAvailable = useImageAvailable(src);
+
+  if (imageAvailable !== true) {
+    return (
+      <div className="showcase-fallback min-h-[300px]">
+        <Package size={30} />
+        <span>Captura pendiente</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="showcase-media h-full min-h-[300px]">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="h-full max-h-[430px] w-full rounded-xl object-contain object-left-top"
+      />
+    </div>
+  );
+}
 
 export default function Productos() {
   const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51987454769';
@@ -101,21 +148,14 @@ export default function Productos() {
               className="glass-card rounded-2xl sm:rounded-3xl overflow-hidden group"
             >
               <div className={`grid grid-cols-1 lg:grid-cols-12 ${idx % 2 === 1 ? 'lg:[&>*:first-child]:order-2' : ''}`}>
-                <div className="lg:col-span-7 min-h-[260px] bg-[#0a0a0f] border-b lg:border-b-0 lg:border-r border-white/10">
+                <div className="lg:col-span-7 min-h-[260px] border-b border-white/10 bg-slate-950 lg:border-b-0 lg:border-r">
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-white/[0.02]">
                     <span className="w-3 h-3 rounded-full bg-red-500/80" />
                     <span className="w-3 h-3 rounded-full bg-yellow-500/80" />
                     <span className="w-3 h-3 rounded-full bg-green-500/80" />
                     <span className="ml-2 text-xs text-gray-500 truncate">{prod.title} demo</span>
                   </div>
-                  <Image
-                    src={prod.image}
-                    alt={prod.imageAlt}
-                    width={1365}
-                    height={768}
-                    sizes="(min-width: 1024px) 58vw, 100vw"
-                    className="w-full h-auto max-h-[430px] object-cover object-left-top"
-                  />
+                  <ProductScreenshot src={prod.image} alt={prod.imageAlt} />
                 </div>
 
                 <div className="lg:col-span-5 p-6 sm:p-8">
