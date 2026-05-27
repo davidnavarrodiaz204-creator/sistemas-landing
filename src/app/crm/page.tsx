@@ -3,6 +3,20 @@
 import { useMemo, useRef, useState } from 'react';
 import InternalGuard from '@/components/InternalGuard';
 import {
+  DEFAULT_DAILY_WHATSAPP_LIMIT,
+  getSendBlockReason,
+  remainingMessagesToday,
+  sentMessagesToday,
+  todayKey,
+} from '@/lib/whatsapp/dailyLimit';
+import { getWhatsAppMessage } from '@/lib/whatsapp/messageTemplates';
+import type {
+  ContactPermission,
+  ConversationStatus,
+  WhatsAppMessageLog,
+  WhatsAppProspectControl,
+} from '@/lib/whatsapp/whatsappTypes';
+import {
   CalendarClock,
   CheckCircle2,
   Clipboard,
@@ -21,7 +35,7 @@ type Interes = 'RESTO' | 'FERRO' | 'Ambos';
 type Estado = 'Nuevo' | 'Contactado' | 'Interesado' | 'Demo 30 días ofrecida' | 'Demo activa' | 'Reunión agendada' | 'Cerrado' | 'Perdido';
 type Origen = 'Google Maps' | 'Facebook' | 'Referido' | 'Visita directa' | 'Otro';
 
-type Prospect = {
+type Prospect = WhatsAppProspectControl & {
   id: string;
   negocio: string;
   rubro: Rubro;
@@ -40,21 +54,24 @@ type Prospect = {
 
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
 
-const STORAGE_KEY = 'factusys_crm_prospects_v2';
-const LEGACY_STORAGE_KEY = 'factusys_crm_prospects_v1';
+const STORAGE_KEY = 'factusys_crm_prospects_v3';
+const LEGACY_STORAGE_KEYS = ['factusys_crm_prospects_v2', 'factusys_crm_prospects_v1'];
 
 const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Ferretería', 'Tienda', 'Otro'];
 const INTERESES: Interes[] = ['RESTO', 'FERRO', 'Ambos'];
 const ESTADOS: Estado[] = ['Nuevo', 'Contactado', 'Interesado', 'Demo 30 días ofrecida', 'Demo activa', 'Reunión agendada', 'Cerrado', 'Perdido'];
 const ORIGENES: Origen[] = ['Google Maps', 'Facebook', 'Referido', 'Visita directa', 'Otro'];
+const PERMISOS_CONTACTO: ContactPermission[] = ['Pendiente', 'Aceptó contacto', 'No contactar'];
+const ESTADOS_CONVERSACION: ConversationStatus[] = ['Sin respuesta', 'Respondió', 'Interesado', 'Demo activa', 'No contactar'];
 
-const MESSAGE_TEMPLATES: Record<Interes, string> = {
-  RESTO:
-    'Hola, soy David de FACTUSYS. Estoy ofreciendo una demo gratuita de 30 días de un sistema POS para restaurantes, pollerías y cevicherías. Ayuda a controlar mesas, pedidos, cocina, caja, reportes y ventas. Durante la demo no se envían documentos reales a SUNAT; es solo para probar el sistema con seguridad. También puedo apoyar con una impresora térmica para la prueba. ¿Te gustaría verlo funcionando?',
-  FERRO:
-    'Hola, soy David de FACTUSYS. Estoy ofreciendo una demo gratuita de 30 días de un sistema POS para ferreterías y tiendas. Te ayuda a controlar ventas, caja, inventario, clientes, cotizaciones, compras y reportes. Durante la demo no se envían documentos reales a SUNAT; es solo para probar el sistema con seguridad. ¿Te gustaría verlo funcionando?',
-  Ambos:
-    'Hola, soy David de FACTUSYS. Implementamos sistemas POS para negocios en Perú: restaurantes, pollerías, ferreterías y tiendas. Estoy ofreciendo una demo gratuita de 30 días para que prueben ventas, caja, inventario/reportes y control del negocio. Durante la demo no se envían documentos reales a SUNAT. ¿Te gustaría ver una demo rápida?',
+const DEFAULT_WHATSAPP_CONTROL: WhatsAppProspectControl = {
+  permisoContacto: 'Pendiente',
+  ultimoMensajeEnviado: '',
+  fechaUltimoMensaje: '',
+  cantidadMensajesEnviados: 0,
+  respuestaCliente: '',
+  estadoConversacion: 'Sin respuesta',
+  historialMensajes: [],
 };
 
 const EMPTY_FORM: ProspectForm = {
@@ -70,12 +87,14 @@ const EMPTY_FORM: ProspectForm = {
   fechaProximoContacto: '',
   nota: '',
   origen: 'Google Maps',
+  ...DEFAULT_WHATSAPP_CONTROL,
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 const DEMO_PROSPECTS: Prospect[] = [
   {
+    ...DEFAULT_WHATSAPP_CONTROL,
     id: 'demo-resto-1',
     negocio: 'Pollería El Buen Sabor',
     rubro: 'Pollería',
@@ -92,6 +111,7 @@ const DEMO_PROSPECTS: Prospect[] = [
     createdAt: new Date().toISOString(),
   },
   {
+    ...DEFAULT_WHATSAPP_CONTROL,
     id: 'demo-resto-2',
     negocio: 'Cevichería La Esquina',
     rubro: 'Restaurante',
@@ -108,6 +128,7 @@ const DEMO_PROSPECTS: Prospect[] = [
     createdAt: new Date().toISOString(),
   },
   {
+    ...DEFAULT_WHATSAPP_CONTROL,
     id: 'demo-ferro-1',
     negocio: 'Ferretería San Miguel',
     rubro: 'Ferretería',
@@ -126,6 +147,8 @@ const DEMO_PROSPECTS: Prospect[] = [
 ];
 
 function normalizeProspect(raw: Partial<Prospect>): Prospect {
+  const cantidadMensajesEnviados = Number(raw.cantidadMensajesEnviados || 0);
+
   return {
     id: raw.id || `prospect-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     negocio: raw.negocio || '',
@@ -140,6 +163,13 @@ function normalizeProspect(raw: Partial<Prospect>): Prospect {
     fechaProximoContacto: raw.fechaProximoContacto || '',
     nota: raw.nota || '',
     origen: ORIGENES.includes(raw.origen as Origen) ? raw.origen as Origen : 'Otro',
+    permisoContacto: PERMISOS_CONTACTO.includes(raw.permisoContacto as ContactPermission) ? raw.permisoContacto as ContactPermission : 'Pendiente',
+    ultimoMensajeEnviado: raw.ultimoMensajeEnviado || '',
+    fechaUltimoMensaje: raw.fechaUltimoMensaje || '',
+    cantidadMensajesEnviados: Number.isFinite(cantidadMensajesEnviados) ? cantidadMensajesEnviados : 0,
+    respuestaCliente: raw.respuestaCliente || '',
+    estadoConversacion: ESTADOS_CONVERSACION.includes(raw.estadoConversacion as ConversationStatus) ? raw.estadoConversacion as ConversationStatus : 'Sin respuesta',
+    historialMensajes: Array.isArray(raw.historialMensajes) ? raw.historialMensajes : [],
     createdAt: raw.createdAt || new Date().toISOString(),
   };
 }
@@ -152,7 +182,7 @@ function migrateEstado(value: string): Estado {
 
 function loadProspects() {
   if (typeof window === 'undefined') return DEMO_PROSPECTS;
-  const stored = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  const stored = window.localStorage.getItem(STORAGE_KEY) || LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean);
   if (!stored) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(DEMO_PROSPECTS));
     return DEMO_PROSPECTS;
@@ -160,7 +190,9 @@ function loadProspects() {
 
   try {
     const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? parsed.map(normalizeProspect) : DEMO_PROSPECTS;
+    const prospects = Array.isArray(parsed) ? parsed.map(normalizeProspect) : DEMO_PROSPECTS;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prospects));
+    return prospects;
   } catch {
     return DEMO_PROSPECTS;
   }
@@ -176,7 +208,7 @@ function normalizePhone(phone: string) {
 }
 
 function getMessage(interes: Interes) {
-  return MESSAGE_TEMPLATES[interes];
+  return getWhatsAppMessage(interes);
 }
 
 function toCsvValue(value: string) {
@@ -184,7 +216,7 @@ function toCsvValue(value: string) {
 }
 
 function downloadCsv(prospects: Prospect[]) {
-  const headers = ['negocio', 'rubro', 'zona', 'contacto', 'telefono', 'redSocial', 'interes', 'estado', 'fechaUltimoContacto', 'fechaProximoContacto', 'origen', 'nota'];
+  const headers = ['negocio', 'rubro', 'zona', 'contacto', 'telefono', 'redSocial', 'interes', 'estado', 'fechaUltimoContacto', 'fechaProximoContacto', 'origen', 'permisoContacto', 'ultimoMensajeEnviado', 'fechaUltimoMensaje', 'cantidadMensajesEnviados', 'respuestaCliente', 'estadoConversacion', 'nota'];
   const rows = prospects.map((item) => headers.map((key) => String(item[key as keyof Prospect] || '')));
   const csv = [headers, ...rows].map((row) => row.map(toCsvValue).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -253,6 +285,15 @@ function CrmApp() {
     cerrados: prospects.filter((item) => item.estado === 'Cerrado').length,
   }), [prospects]);
 
+  const whatsappLimit = useMemo(() => {
+    const sent = sentMessagesToday(prospects);
+    return {
+      limit: DEFAULT_DAILY_WHATSAPP_LIMIT,
+      sent,
+      remaining: remainingMessagesToday(prospects),
+    };
+  }, [prospects]);
+
   const persist = (nextProspects: Prospect[]) => {
     setProspects(nextProspects);
     saveProspects(nextProspects);
@@ -273,6 +314,26 @@ function CrmApp() {
     persist(prospects.map((item) => item.id === id ? { ...item, ...patch } : item));
   };
 
+  const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}) => {
+    const message = getMessage(prospect.interes);
+    const entry: WhatsAppMessageLog = {
+      id: `wa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      prospectId: prospect.id,
+      phone: normalizePhone(prospect.telefono),
+      interes: prospect.interes,
+      message,
+      status,
+      createdAt: new Date().toISOString(),
+    };
+
+    persist(prospects.map((item) => item.id === prospect.id ? {
+      ...item,
+      ultimoMensajeEnviado: message,
+      historialMensajes: [entry, ...(item.historialMensajes || [])],
+      ...patch,
+    } : item));
+  };
+
   const clearDemo = () => {
     if (!window.confirm('¿Limpiar todos los datos del CRM?')) return;
     persist([]);
@@ -281,7 +342,47 @@ function CrmApp() {
   const copyMessage = async (prospect: Prospect) => {
     await navigator.clipboard.writeText(getMessage(prospect.interes));
     setCopiedId(prospect.id);
+    logWhatsAppAction(prospect, 'copied');
     window.setTimeout(() => setCopiedId(null), 1400);
+  };
+
+  const prepareMessage = (prospect: Prospect) => {
+    logWhatsAppAction(prospect, 'prepared');
+  };
+
+  const openWhatsApp = (prospect: Prospect) => {
+    logWhatsAppAction(prospect, 'opened_whatsapp');
+    window.open(`https://wa.me/${normalizePhone(prospect.telefono)}?text=${encodeURIComponent(getMessage(prospect.interes))}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const markSent = (prospect: Prospect) => {
+    const blockReason = getSendBlockReason(prospects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
+    if (blockReason) return;
+    if (!window.confirm(`Confirmar que enviaste manualmente el mensaje a ${prospect.negocio}.`)) return;
+
+    logWhatsAppAction(prospect, 'sent_marked', {
+      estado: prospect.estado === 'Nuevo' ? 'Contactado' : prospect.estado,
+      fechaUltimoContacto: today(),
+      fechaUltimoMensaje: todayKey(),
+      cantidadMensajesEnviados: prospect.cantidadMensajesEnviados + 1,
+      estadoConversacion: 'Sin respuesta',
+    });
+  };
+
+  const markAnswered = (prospect: Prospect) => {
+    logWhatsAppAction(prospect, 'answered', {
+      estadoConversacion: 'Respondió',
+      respuestaCliente: prospect.respuestaCliente || 'Respondió por WhatsApp',
+      fechaUltimoContacto: today(),
+    });
+  };
+
+  const markNoContact = (prospect: Prospect) => {
+    logWhatsAppAction(prospect, 'blocked', {
+      permisoContacto: 'No contactar',
+      estadoConversacion: 'No contactar',
+      estado: 'Perdido',
+    });
   };
 
   const importCsv = async (file: File) => {
@@ -319,13 +420,21 @@ function CrmApp() {
           <MetricCard label="Cerrados" value={metrics.cerrados} />
         </section>
 
+        <section className="mb-6">
+          <WhatsAppLimitPanel sent={whatsappLimit.sent} remaining={whatsappLimit.remaining} limit={whatsappLimit.limit} />
+        </section>
+
         <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
           <OfferCard />
-          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} />
+          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
         </section>
 
         <section className="mb-6">
-          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} />
+          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
+        </section>
+
+        <section className="mb-6">
+          <FollowupsView prospects={filteredProspects} />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
@@ -341,7 +450,7 @@ function CrmApp() {
               interesFilter={interesFilter}
               setInteresFilter={setInteresFilter}
             />
-            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={(id) => persist(prospects.filter((item) => item.id !== id))} />
+            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={(id) => persist(prospects.filter((item) => item.id !== id))} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
           </div>
         </section>
       </div>
@@ -354,6 +463,82 @@ function MetricCard({ label, value }: { label: string; value: number }) {
     <div className="crm-card p-4">
       <span className="crm-muted text-xs font-medium">{label}</span>
       <p className="crm-number mt-3">{value}</p>
+    </div>
+  );
+}
+
+function WhatsAppLimitPanel({ sent, remaining, limit }: { sent: number; remaining: number; limit: number }) {
+  const blocked = remaining <= 0;
+
+  return (
+    <div className="crm-card p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="crm-eyebrow mb-2">Límite WhatsApp de hoy</p>
+          <h2 className="crm-section-title">Envío manual y controlado</h2>
+          <p className="crm-muted mt-1 text-sm">No hay envío real automático. Cada mensaje se prepara, copia o marca manualmente desde el CRM.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:min-w-[320px]">
+          <div className="crm-mini-card rounded-xl p-4">
+            <span className="crm-muted text-xs font-bold uppercase">Enviados hoy</span>
+            <p className="crm-number mt-2">{sent}/{limit}</p>
+          </div>
+          <div className="crm-mini-card rounded-xl p-4">
+            <span className="crm-muted text-xs font-bold uppercase">Restantes</span>
+            <p className={`crm-number mt-2 ${blocked ? 'text-red-500' : ''}`}>{remaining}</p>
+          </div>
+        </div>
+      </div>
+      {blocked && <p className="crm-note mt-4 text-sm">Límite diario alcanzado. El botón “Marcar como enviado” queda bloqueado hasta mañana.</p>}
+    </div>
+  );
+}
+
+function FollowupsView({ prospects }: { prospects: Prospect[] }) {
+  const groups = [
+    {
+      title: 'Contactados sin respuesta',
+      items: prospects.filter((item) => item.estadoConversacion === 'Sin respuesta' && item.fechaUltimoMensaje),
+    },
+    {
+      title: 'Interesados',
+      items: prospects.filter((item) => item.estado === 'Interesado' || item.estadoConversacion === 'Interesado'),
+    },
+    {
+      title: 'Demos activas',
+      items: prospects.filter((item) => item.estado === 'Demo activa' || item.estadoConversacion === 'Demo activa'),
+    },
+    {
+      title: 'No contactar',
+      items: prospects.filter((item) => item.permisoContacto === 'No contactar' || item.estadoConversacion === 'No contactar'),
+    },
+  ];
+
+  return (
+    <div className="crm-card p-4">
+      <div className="mb-4">
+        <h2 className="crm-section-title">Seguimientos</h2>
+        <p className="crm-muted text-sm">Vista rápida para saber a quién insistir, quién respondió y quién queda bloqueado.</p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {groups.map((group) => (
+          <div key={group.title} className="crm-pipeline-column rounded-2xl p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="crm-muted text-xs font-bold uppercase tracking-wide">{group.title}</h3>
+              <span className="crm-badge">{group.items.length}</span>
+            </div>
+            <div className="space-y-2">
+              {group.items.slice(0, 4).map((item) => (
+                <div key={`${group.title}-${item.id}`} className="crm-mini-card rounded-xl p-3">
+                  <p className="font-bold text-slate-900">{item.negocio}</p>
+                  <p className="crm-muted text-xs">{item.telefono} · {item.interes}</p>
+                </div>
+              ))}
+              {group.items.length === 0 && <p className="crm-muted rounded-xl border border-dashed border-black/10 p-3 text-center text-xs">Sin pendientes</p>}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -375,7 +560,16 @@ function OfferCard() {
   );
 }
 
-function TodayList({ prospects, copiedId, onCopy, onUpdate }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void }) {
+type WhatsAppActions = {
+  allProspects: Prospect[];
+  onPrepare: (p: Prospect) => void;
+  onOpenWhatsApp: (p: Prospect) => void;
+  onMarkSent: (p: Prospect) => void;
+  onMarkAnswered: (p: Prospect) => void;
+  onNoContact: (p: Prospect) => void;
+};
+
+function TodayList({ prospects, copiedId, onCopy, onUpdate, ...actions }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
   return (
     <div className="crm-card p-5">
       <div className="mb-4 flex items-center justify-between">
@@ -388,14 +582,14 @@ function TodayList({ prospects, copiedId, onCopy, onUpdate }: { prospects: Prosp
       <div className="space-y-3">
         {prospects.length === 0 && <p className="crm-note text-sm">No tienes seguimientos pendientes para hoy.</p>}
         {prospects.slice(0, 5).map((prospect) => (
-          <QuickProspect key={prospect.id} prospect={prospect} copied={copiedId === prospect.id} onCopy={onCopy} onUpdate={onUpdate} />
+          <QuickProspect key={prospect.id} prospect={prospect} copied={copiedId === prospect.id} onCopy={onCopy} onUpdate={onUpdate} {...actions} />
         ))}
       </div>
     </div>
   );
 }
 
-function Pipeline({ prospects, copiedId, onCopy, onUpdate }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void }) {
+function Pipeline({ prospects, copiedId, onCopy, onUpdate, ...actions }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
   return (
     <div className="crm-card p-4">
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -416,7 +610,7 @@ function Pipeline({ prospects, copiedId, onCopy, onUpdate }: { prospects: Prospe
                 </div>
                 <div className="space-y-2">
                   {items.map((prospect) => (
-                    <QuickProspect key={prospect.id} prospect={prospect} copied={copiedId === prospect.id} compact onCopy={onCopy} onUpdate={onUpdate} />
+                    <QuickProspect key={prospect.id} prospect={prospect} copied={copiedId === prospect.id} compact onCopy={onCopy} onUpdate={onUpdate} {...actions} />
                   ))}
                   {items.length === 0 && <p className="crm-muted rounded-xl border border-dashed border-black/10 p-3 text-center text-xs">Vacío</p>}
                 </div>
@@ -445,9 +639,12 @@ function ProspectFormCard({ form, setField, onSubmit }: { form: ProspectForm; se
         <Field label="Facebook/Instagram/TikTok"><input className="crm-input" value={form.redSocial} onChange={(e) => setField('redSocial', e.target.value)} /></Field>
         <Field label="Interés"><Select value={form.interes} options={INTERESES} onChange={(value) => setField('interes', value as Interes)} /></Field>
         <Field label="Estado"><Select value={form.estado} options={ESTADOS} onChange={(value) => setField('estado', value as Estado)} /></Field>
+        <Field label="Permiso de contacto"><Select value={form.permisoContacto} options={PERMISOS_CONTACTO} onChange={(value) => setField('permisoContacto', value as ContactPermission)} /></Field>
+        <Field label="Estado conversación"><Select value={form.estadoConversacion} options={ESTADOS_CONVERSACION} onChange={(value) => setField('estadoConversacion', value as ConversationStatus)} /></Field>
         <Field label="Fecha último contacto"><input className="crm-input" type="date" value={form.fechaUltimoContacto} onChange={(e) => setField('fechaUltimoContacto', e.target.value)} /></Field>
         <Field label="Próximo seguimiento"><input className="crm-input" type="date" value={form.fechaProximoContacto} onChange={(e) => setField('fechaProximoContacto', e.target.value)} /></Field>
         <Field label="Origen"><Select value={form.origen} options={ORIGENES} onChange={(value) => setField('origen', value as Origen)} /></Field>
+        <Field label="Respuesta cliente"><input className="crm-input" value={form.respuestaCliente} onChange={(e) => setField('respuestaCliente', e.target.value)} /></Field>
         <div className="sm:col-span-2 xl:col-span-1"><Field label="Nota"><textarea className="crm-input min-h-24 resize-none" value={form.nota} onChange={(e) => setField('nota', e.target.value)} /></Field></div>
       </div>
       <button type="submit" className="crm-button-primary mt-5 w-full"><Plus size={16} />Guardar prospecto</button>
@@ -468,7 +665,7 @@ function Filters(props: { search: string; setSearch: (v: string) => void; rubroF
   );
 }
 
-function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void }) {
+function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete, ...actions }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
   return (
     <div className="space-y-3">
       {prospects.length === 0 && <div className="crm-card p-10 text-center"><Users className="mx-auto mb-3 text-neon" /><h3 className="crm-section-title">Sin prospectos</h3><p className="crm-muted mt-1 text-sm">Agrega un negocio o cambia los filtros.</p></div>}
@@ -481,13 +678,20 @@ function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete }: { pro
                 <p><strong>Contacto:</strong> {prospect.contacto}</p><p><strong>WhatsApp:</strong> {prospect.telefono}</p>
                 <p><strong>Zona:</strong> {prospect.zona || 'Sin zona'}</p><p><strong>Origen:</strong> {prospect.origen}</p>
                 <p><strong>Red:</strong> {prospect.redSocial || 'No registrada'}</p><p><strong>Último contacto:</strong> {prospect.fechaUltimoContacto || 'Sin registro'}</p>
+                <p><strong>Permiso:</strong> {prospect.permisoContacto}</p><p><strong>Conversación:</strong> {prospect.estadoConversacion}</p>
+                <p><strong>Último WA:</strong> {prospect.fechaUltimoMensaje || 'Sin envío'}</p><p><strong>Mensajes:</strong> {prospect.cantidadMensajesEnviados}</p>
               </div>
               {prospect.nota && <p className="crm-note mt-3"><strong>Nota:</strong> {prospect.nota}</p>}
+              {prospect.respuestaCliente && <p className="crm-note mt-2"><strong>Respuesta:</strong> {prospect.respuestaCliente}</p>}
+              {prospect.ultimoMensajeEnviado && <p className="crm-note mt-2 line-clamp-3"><strong>Último mensaje:</strong> {prospect.ultimoMensajeEnviado}</p>}
             </div>
             <div className="flex min-w-full flex-col gap-2 sm:min-w-[285px]">
               <Select value={prospect.estado} options={ESTADOS} onChange={(value) => onUpdate(prospect.id, { estado: value as Estado })} />
+              <Select value={prospect.permisoContacto} options={PERMISOS_CONTACTO} onChange={(value) => onUpdate(prospect.id, { permisoContacto: value as ContactPermission })} />
+              <Select value={prospect.estadoConversacion} options={ESTADOS_CONVERSACION} onChange={(value) => onUpdate(prospect.id, { estadoConversacion: value as ConversationStatus })} />
               <input className="crm-input" type="date" value={prospect.fechaProximoContacto} onChange={(e) => onUpdate(prospect.id, { fechaProximoContacto: e.target.value })} />
-              <ActionButtons prospect={prospect} copied={copiedId === prospect.id} onCopy={onCopy} onUpdate={onUpdate} onDelete={onDelete} />
+              <input className="crm-input" value={prospect.respuestaCliente} onChange={(e) => onUpdate(prospect.id, { respuestaCliente: e.target.value })} placeholder="Respuesta del cliente" />
+              <ActionButtons prospect={prospect} copied={copiedId === prospect.id} onCopy={onCopy} onUpdate={onUpdate} onDelete={onDelete} {...actions} />
             </div>
           </div>
         </article>
@@ -496,28 +700,45 @@ function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete }: { pro
   );
 }
 
-function QuickProspect({ prospect, copied, compact, onCopy, onUpdate }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void }) {
+function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
+  const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
+
   return (
     <div className="crm-mini-card rounded-xl p-3">
       <p className="font-bold text-slate-900">{prospect.negocio}</p>
       <p className="crm-muted text-xs">{prospect.contacto} · {prospect.telefono}</p>
       {!compact && <p className="crm-muted mt-1 text-xs">Seguimiento: {prospect.fechaProximoContacto || 'sin fecha'}</p>}
-      <div className="mt-3 flex gap-2">
-        <a className="crm-button-primary min-h-0 flex-1 justify-center px-3 py-2 text-xs" href={`https://wa.me/${normalizePhone(prospect.telefono)}?text=${encodeURIComponent(getMessage(prospect.interes))}`} target="_blank" rel="noreferrer"><MessageCircle size={13} />WA</a>
+      <p className="crm-muted mt-1 text-xs">WA: {prospect.permisoContacto} · {prospect.estadoConversacion}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onPrepare(prospect)}>Preparar</button>
         <button type="button" className="crm-button-secondary min-h-0 flex-1 justify-center px-3 py-2 text-xs" onClick={() => onCopy(prospect)}>{copied ? 'Copiado' : 'Copiar'}</button>
+        <button type="button" className="crm-button-primary min-h-0 justify-center px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(blockReason)} title={blockReason || 'Abrir WhatsApp'} onClick={() => onOpenWhatsApp(prospect)}><MessageCircle size={13} />WA</button>
+        <button type="button" className="crm-button-secondary min-h-0 justify-center px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(blockReason)} title={blockReason || 'Marcar mensaje como enviado'} onClick={() => onMarkSent(prospect)}>Enviado</button>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onMarkAnswered(prospect)}>Respondió</button>
+        <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onNoContact(prospect)}>No contactar</button>
       </div>
       <button type="button" className="crm-button-ghost mt-2 min-h-0 w-full justify-center px-3 py-2 text-xs" onClick={() => onUpdate(prospect.id, { estado: 'Contactado', fechaUltimoContacto: today() })}>Marcar contactado</button>
+      {blockReason && <p className="crm-muted mt-2 text-xs">{blockReason}</p>}
     </div>
   );
 }
 
-function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void }) {
+function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
+  const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
+
   return (
     <div className="grid grid-cols-2 gap-2">
-      <a href={`https://wa.me/${normalizePhone(prospect.telefono)}?text=${encodeURIComponent(getMessage(prospect.interes))}`} target="_blank" rel="noreferrer" className="crm-button-primary justify-center"><MessageCircle size={15} />WhatsApp</a>
+      <button type="button" onClick={() => onPrepare(prospect)} className="crm-button-ghost justify-center">Preparar mensaje</button>
       <button type="button" onClick={() => onCopy(prospect)} className="crm-button-secondary justify-center"><Clipboard size={15} />{copied ? 'Copiado' : 'Copiar'}</button>
+      <button type="button" onClick={() => onOpenWhatsApp(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Abrir WhatsApp'} className="crm-button-primary justify-center disabled:cursor-not-allowed disabled:opacity-50"><MessageCircle size={15} />Abrir WhatsApp</button>
+      <button type="button" onClick={() => onMarkSent(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Marcar como enviado'} className="crm-button-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">Marcar enviado</button>
+      <button type="button" onClick={() => onMarkAnswered(prospect)} className="crm-button-secondary justify-center">Marcar respondió</button>
+      <button type="button" onClick={() => onNoContact(prospect)} className="crm-button-ghost justify-center">No contactar</button>
       <button type="button" onClick={() => onUpdate(prospect.id, { estado: 'Contactado', fechaUltimoContacto: today() })} className="crm-button-secondary justify-center">Contactado</button>
       <button type="button" onClick={() => onUpdate(prospect.id, { fechaProximoContacto: today() })} className="crm-button-secondary justify-center">Seguir hoy</button>
+      {blockReason && <p className="crm-muted col-span-2 text-xs">{blockReason}</p>}
       <button type="button" onClick={() => onDelete(prospect.id)} className="crm-button-ghost col-span-2 justify-center"><Trash2 size={15} />Eliminar</button>
     </div>
   );
