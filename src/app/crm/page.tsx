@@ -3,6 +3,14 @@
 import { useMemo, useRef, useState } from 'react';
 import InternalGuard from '@/components/InternalGuard';
 import {
+  ASSISTANT_INTENTS,
+  generateSalesMessage,
+  getAssistantContextNote,
+  getNextAction,
+  getRecommendedIntent,
+  type AssistantIntent,
+} from '@/lib/crm-ai/salesAssistant';
+import {
   DEFAULT_DAILY_WHATSAPP_LIMIT,
   getSendBlockReason,
   remainingMessagesToday,
@@ -26,8 +34,10 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Sparkles,
   Trash2,
   Users,
+  X,
 } from 'lucide-react';
 
 type Rubro = 'Restaurante' | 'Pollería' | 'Ferretería' | 'Tienda' | 'Otro';
@@ -256,6 +266,10 @@ function CrmApp() {
   const [estadoFilter, setEstadoFilter] = useState('Todos');
   const [interesFilter, setInteresFilter] = useState('Todos');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [assistantProspect, setAssistantProspect] = useState<Prospect | null>(null);
+  const [assistantIntent, setAssistantIntent] = useState<AssistantIntent>('Primer contacto');
+  const [assistantDraft, setAssistantDraft] = useState('');
+  const [assistantCopied, setAssistantCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredProspects = useMemo(() => {
@@ -314,8 +328,8 @@ function CrmApp() {
     persist(prospects.map((item) => item.id === id ? { ...item, ...patch } : item));
   };
 
-  const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}) => {
-    const message = getMessage(prospect.interes);
+  const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}, messageOverride?: string) => {
+    const message = messageOverride || getMessage(prospect.interes);
     const entry: WhatsAppMessageLog = {
       id: `wa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       prospectId: prospect.id,
@@ -385,6 +399,40 @@ function CrmApp() {
     });
   };
 
+  const openAssistant = (prospect: Prospect) => {
+    const recommendedIntent = getRecommendedIntent(prospect);
+    setAssistantProspect(prospect);
+    setAssistantIntent(recommendedIntent);
+    setAssistantDraft(generateSalesMessage(prospect, recommendedIntent));
+    setAssistantCopied(false);
+  };
+
+  const updateAssistantIntent = (intent: AssistantIntent) => {
+    setAssistantIntent(intent);
+    if (assistantProspect) {
+      setAssistantDraft(generateSalesMessage(assistantProspect, intent));
+    }
+  };
+
+  const copyAssistantDraft = async () => {
+    if (!assistantDraft.trim()) return;
+    await navigator.clipboard.writeText(assistantDraft);
+    setAssistantCopied(true);
+    window.setTimeout(() => setAssistantCopied(false), 1400);
+  };
+
+  const saveAssistantDraft = () => {
+    if (!assistantProspect || !assistantDraft.trim()) return;
+    logWhatsAppAction(assistantProspect, 'ai_saved', {
+      ultimoMensajeEnviado: assistantDraft,
+    }, assistantDraft);
+  };
+
+  const openAssistantWhatsApp = () => {
+    if (!assistantProspect || !assistantDraft.trim()) return;
+    window.open(`https://wa.me/${normalizePhone(assistantProspect.telefono)}?text=${encodeURIComponent(assistantDraft)}`, '_blank', 'noopener,noreferrer');
+  };
+
   const importCsv = async (file: File) => {
     const text = await file.text();
     const imported = parseCsv(text);
@@ -426,11 +474,11 @@ function CrmApp() {
 
         <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
           <OfferCard />
-          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
+          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
         </section>
 
         <section className="mb-6">
-          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
+          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
         </section>
 
         <section className="mb-6">
@@ -450,10 +498,24 @@ function CrmApp() {
               interesFilter={interesFilter}
               setInteresFilter={setInteresFilter}
             />
-            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={(id) => persist(prospects.filter((item) => item.id !== id))} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} allProspects={prospects} />
+            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={(id) => persist(prospects.filter((item) => item.id !== id))} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
           </div>
         </section>
       </div>
+      {assistantProspect && (
+        <SalesAssistantModal
+          prospect={assistantProspect}
+          intent={assistantIntent}
+          draft={assistantDraft}
+          copied={assistantCopied}
+          onClose={() => setAssistantProspect(null)}
+          onIntentChange={updateAssistantIntent}
+          onDraftChange={setAssistantDraft}
+          onCopy={copyAssistantDraft}
+          onSave={saveAssistantDraft}
+          onOpenWhatsApp={openAssistantWhatsApp}
+        />
+      )}
     </main>
   );
 }
@@ -567,6 +629,7 @@ type WhatsAppActions = {
   onMarkSent: (p: Prospect) => void;
   onMarkAnswered: (p: Prospect) => void;
   onNoContact: (p: Prospect) => void;
+  onOpenAssistant: (p: Prospect) => void;
 };
 
 function TodayList({ prospects, copiedId, onCopy, onUpdate, ...actions }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
@@ -700,7 +763,7 @@ function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete, ...acti
   );
 }
 
-function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
+function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
   const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
 
   return (
@@ -719,13 +782,14 @@ function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspec
         <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onMarkAnswered(prospect)}>Respondió</button>
         <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onNoContact(prospect)}>No contactar</button>
       </div>
+      <button type="button" className="crm-button-secondary mt-2 min-h-0 w-full justify-center px-3 py-2 text-xs" onClick={() => onOpenAssistant(prospect)}><Sparkles size={13} />Asistente IA</button>
       <button type="button" className="crm-button-ghost mt-2 min-h-0 w-full justify-center px-3 py-2 text-xs" onClick={() => onUpdate(prospect.id, { estado: 'Contactado', fechaUltimoContacto: today() })}>Marcar contactado</button>
       {blockReason && <p className="crm-muted mt-2 text-xs">{blockReason}</p>}
     </div>
   );
 }
 
-function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
+function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
   const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
 
   return (
@@ -736,10 +800,116 @@ function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspe
       <button type="button" onClick={() => onMarkSent(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Marcar como enviado'} className="crm-button-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">Marcar enviado</button>
       <button type="button" onClick={() => onMarkAnswered(prospect)} className="crm-button-secondary justify-center">Marcar respondió</button>
       <button type="button" onClick={() => onNoContact(prospect)} className="crm-button-ghost justify-center">No contactar</button>
+      <button type="button" onClick={() => onOpenAssistant(prospect)} className="crm-button-secondary col-span-2 justify-center"><Sparkles size={15} />Asistente IA</button>
       <button type="button" onClick={() => onUpdate(prospect.id, { estado: 'Contactado', fechaUltimoContacto: today() })} className="crm-button-secondary justify-center">Contactado</button>
       <button type="button" onClick={() => onUpdate(prospect.id, { fechaProximoContacto: today() })} className="crm-button-secondary justify-center">Seguir hoy</button>
       {blockReason && <p className="crm-muted col-span-2 text-xs">{blockReason}</p>}
       <button type="button" onClick={() => onDelete(prospect.id)} className="crm-button-ghost col-span-2 justify-center"><Trash2 size={15} />Eliminar</button>
+    </div>
+  );
+}
+
+function SalesAssistantModal({
+  prospect,
+  intent,
+  draft,
+  copied,
+  onClose,
+  onIntentChange,
+  onDraftChange,
+  onCopy,
+  onSave,
+  onOpenWhatsApp,
+}: {
+  prospect: Prospect;
+  intent: AssistantIntent;
+  draft: string;
+  copied: boolean;
+  onClose: () => void;
+  onIntentChange: (intent: AssistantIntent) => void;
+  onDraftChange: (value: string) => void;
+  onCopy: () => void;
+  onSave: () => void;
+  onOpenWhatsApp: () => void;
+}) {
+  const recommendedIntent = getRecommendedIntent(prospect);
+  const nextAction = getNextAction(prospect);
+  const history = prospect.historialMensajes.slice(0, 5);
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="crm-card max-h-[92vh] w-full max-w-5xl overflow-hidden" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-black/10 p-5">
+          <div>
+            <p className="crm-eyebrow mb-2">Asistente IA comercial</p>
+            <h2 className="crm-section-title text-2xl">{prospect.negocio}</h2>
+            <p className="crm-muted mt-1 text-sm">Plantillas locales editables. No se conecta API de IA y no se envía automático.</p>
+          </div>
+          <button type="button" className="crm-button-ghost min-h-0 px-3 py-2" onClick={onClose} aria-label="Cerrar asistente">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid max-h-[76vh] gap-5 overflow-auto p-5 lg:grid-cols-[360px_1fr]">
+          <aside className="space-y-4">
+            <div className="crm-mini-card rounded-2xl p-4">
+              <h3 className="crm-section-title text-base">Datos del prospecto</h3>
+              <div className="crm-muted mt-3 space-y-1 text-sm">
+                <p><strong>Contacto:</strong> {prospect.contacto}</p>
+                <p><strong>Rubro:</strong> {prospect.rubro}</p>
+                <p><strong>Interés:</strong> {prospect.interes}</p>
+                <p><strong>Estado:</strong> {prospect.estado}</p>
+                <p><strong>Conversación:</strong> {prospect.estadoConversacion}</p>
+                <p><strong>WhatsApp:</strong> {prospect.telefono}</p>
+              </div>
+            </div>
+
+            <div className="crm-note">
+              <p className="font-bold">Próxima acción recomendada</p>
+              <p className="mt-1 text-sm">{nextAction}</p>
+              <p className="mt-2 text-xs">Tipo sugerido: {recommendedIntent}</p>
+            </div>
+
+            <div className="crm-mini-card rounded-2xl p-4">
+              <h3 className="crm-section-title text-base">Historial</h3>
+              <div className="mt-3 space-y-2">
+                {history.length === 0 && <p className="crm-muted text-sm">Sin mensajes guardados todavía.</p>}
+                {history.map((item) => (
+                  <div key={item.id} className="crm-note text-xs">
+                    <p className="font-bold">{item.status} · {item.createdAt.slice(0, 10)}</p>
+                    <p className="mt-1 line-clamp-3">{item.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+
+          <section className="space-y-4">
+            <div>
+              <label className="block">
+                <span className="crm-label">Tipo de mensaje</span>
+                <Select value={intent} options={ASSISTANT_INTENTS} onChange={(value) => onIntentChange(value as AssistantIntent)} />
+              </label>
+              <p className="crm-muted mt-2 text-xs">{getAssistantContextNote(intent)}</p>
+            </div>
+
+            <label className="block">
+              <span className="crm-label">Texto editable</span>
+              <textarea
+                className="crm-input min-h-[260px] resize-none text-sm leading-relaxed"
+                value={draft}
+                onChange={(event) => onDraftChange(event.target.value)}
+              />
+            </label>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button type="button" className="crm-button-secondary justify-center" onClick={onCopy}><Clipboard size={15} />{copied ? 'Copiado' : 'Copiar respuesta'}</button>
+              <button type="button" className="crm-button-secondary justify-center" onClick={onSave}><CheckCircle2 size={15} />Guardar en historial</button>
+              <button type="button" className="crm-button-primary justify-center" onClick={onOpenWhatsApp}><MessageCircle size={15} />Abrir WhatsApp</button>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

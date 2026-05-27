@@ -15,7 +15,8 @@ export type WhatsAppMessageStatus =
   | 'opened_whatsapp'
   | 'sent_marked'
   | 'answered'
-  | 'blocked';
+  | 'blocked'
+  | 'ai_saved';
 
 export type WhatsAppMessageLog = {
   id: string;
