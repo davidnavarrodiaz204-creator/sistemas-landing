@@ -4,15 +4,15 @@ import { Zap, Package, Calculator, Users, FileText, BarChart3, UserCheck, Databa
 import { motion } from 'framer-motion';
 
 const beneficios = [
-  { icon: Zap, title: 'POS rápido', desc: 'Ventas ágiles y sin demoras' },
-  { icon: Package, title: 'Inventario', desc: 'Control total de stock' },
-  { icon: Calculator, title: 'Caja diaria', desc: 'Cierre y arqueo automático' },
-  { icon: Users, title: 'Clientes y créditos', desc: 'Gestión de cartera y pagos' },
-  { icon: FileText, title: 'Facturación SUNAT', desc: 'Boletas y facturas electrónicas' },
-  { icon: BarChart3, title: 'Reportes', desc: 'Análisis de ventas y ganancias' },
-  { icon: UserCheck, title: 'Multiusuario', desc: 'Roles y permisos personalizados' },
-  { icon: Database, title: 'Backup', desc: 'Respaldo automático en la nube' },
-  { icon: Shield, title: 'Seguridad', desc: 'Datos protegidos y encriptados' },
+  { icon: Zap, title: 'Ventas rapidas', desc: 'Cobra en segundos desde una pantalla clara' },
+  { icon: Package, title: 'Stock controlado', desc: 'Productos, categorias, proveedores y alertas' },
+  { icon: Calculator, title: 'Caja por turno', desc: 'Ingresos, egresos, arqueo y cierre diario' },
+  { icon: Users, title: 'Clientes y creditos', desc: 'Historial, deuda, pagos y cartera ordenada' },
+  { icon: FileText, title: 'Facturacion Peru', desc: 'Boletas, facturas, tickets y notas de credito' },
+  { icon: BarChart3, title: 'Reportes utiles', desc: 'Ventas, ganancias, productos y movimiento diario' },
+  { icon: UserCheck, title: 'Roles de usuario', desc: 'Permisos para caja, administracion y reportes' },
+  { icon: Database, title: 'Datos protegidos', desc: 'Informacion ordenada y lista para respaldo' },
+  { icon: Shield, title: 'Acompañamiento', desc: 'Instalacion, capacitacion y soporte para tu equipo' },
 ];
 
 export default function Beneficios() {
@@ -30,10 +30,10 @@ export default function Beneficios() {
             <span className="brand-section-label">Beneficios</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="brand-gradient-text">Todo lo que necesitas</span>
+            <span className="brand-gradient-text">Lo que hacemos por tu negocio</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
-            Herramientas profesionales para hacer crecer tu negocio
+            Convertimos tu operacion diaria en un sistema ordenado: ventas, caja, inventario, documentos y decisiones.
           </p>
         </motion.div>
 

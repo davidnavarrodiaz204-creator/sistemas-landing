@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -17,6 +18,12 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,9 +32,17 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} theme-day h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans">
+        <Script
+          id="factusys-theme"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: "try{var p=new URLSearchParams(location.search);var t=p.get('theme');var saved=localStorage.getItem('factusys-theme');if(t==='night'){localStorage.setItem('factusys-theme','night');document.documentElement.classList.remove('theme-day')}else if(t==='day'){localStorage.setItem('factusys-theme','day');document.documentElement.classList.add('theme-day')}else if(saved==='night'){document.documentElement.classList.remove('theme-day')}else{document.documentElement.classList.add('theme-day')}}catch(e){}",
+          }}
+        />
         <Navbar />
         <main className="flex-grow">
           {children}

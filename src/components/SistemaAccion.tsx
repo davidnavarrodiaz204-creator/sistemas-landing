@@ -2,49 +2,49 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, Package, Calculator, FileText, MessageCircle } from 'lucide-react';
+import { Monitor, Package, Calculator, FileText, MessageCircle, ShoppingCart } from 'lucide-react';
 
 const steps = [
   {
     id: 0,
-    title: 'Sistema POS para negocios en Perú',
-    desc: 'La solución completa para gestionar tus ventas e inventario.',
-    icon: Monitor,
+    title: 'FACTUSYS en accion',
+    desc: 'Una vista rapida de las pantallas reales que usamos para vender, cobrar, controlar stock y emitir documentos.',
+    icon: ShoppingCart,
     fileName: 'pos-screenshot.png', // Imagen inicial
     isTextOnly: true,
   },
   {
     id: 1,
-    title: 'POS - Punto de Venta',
-    desc: 'Interfaz rápida y limpia para procesar ventas al instante.',
+    title: 'POS - Punto de venta',
+    desc: 'Busca productos, arma el carrito, elige el comprobante y cobra con efectivo, Yape, Plin, tarjeta o credito.',
     icon: Monitor,
     fileName: 'pos-screenshot.png',
   },
   {
     id: 2,
-    title: 'Caja Diaria',
-    desc: 'Control diario de ingresos, egresos y arqueo de caja.',
+    title: 'Caja diaria',
+    desc: 'Controla ventas del turno, ingresos, egresos, metodos de pago y cierre de caja sin hojas sueltas.',
     icon: Calculator,
     fileName: 'caja-screenshot.png',
   },
   {
     id: 3,
     title: 'Inventario',
-    desc: 'Gestiona tu stock, entradas y salidas en tiempo real.',
+    desc: 'Registra productos, codigos, proveedores, costos, precios, stock y reposicion desde una sola pantalla.',
     icon: Package,
     fileName: 'inventario-screenshot.png',
   },
   {
     id: 4,
     title: 'Documentos SUNAT',
-    desc: 'Boletas, facturas y reportes listos para SUNAT.',
+    desc: 'Consulta boletas, facturas, tickets y notas de credito con estado, envio, impresion y descarga.',
     icon: FileText,
     fileName: 'documentos-screenshot.png',
   },
   {
     id: 5,
     title: 'Pide tu demo por WhatsApp',
-    desc: 'Escríbenos ahora y comienza a usar el sistema en menos de 48 horas.',
+    desc: 'Te mostramos FERRO o RESTO segun tu negocio y dejamos claro que necesitas para empezar.',
     icon: MessageCircle,
     fileName: 'documentos-screenshot.png', // Mantiene la última imagen
     isFinal: true,
@@ -53,6 +53,7 @@ const steps = [
 
 export default function SistemaAccion() {
   const [activeIndex, setActiveIndex] = useState(0);
+  const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51987454769';
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -74,13 +75,13 @@ export default function SistemaAccion() {
           className="text-center mb-12 sm:mb-20"
         >
           <div className="mb-4">
-            <span className="brand-section-label">Live Demo</span>
+            <span className="brand-section-label">Pantallas reales</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="brand-gradient-text">Sistema en acción</span>
+            <span className="brand-gradient-text">Mira como trabaja el sistema</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
-            Presentación automática de 45 segundos
+            Capturas del POS, caja, inventario y documentos para que el cliente entienda lo que va a recibir.
           </p>
         </motion.div>
 
@@ -126,7 +127,7 @@ export default function SistemaAccion() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.5, ease: "easeInOut" }}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover object-left-top"
                   />
                 </AnimatePresence>
               </div>
@@ -170,6 +171,20 @@ export default function SistemaAccion() {
                 </div>
               </motion.div>
             ))}
+
+            <motion.a
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.35 }}
+              href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hola, quiero que me muestren el sistema POS para mi negocio.')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-neon text-black font-semibold px-6 py-3 rounded-full inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+            >
+              <MessageCircle size={18} />
+              Quiero que me lo muestren
+            </motion.a>
           </div>
         </div>
       </div>

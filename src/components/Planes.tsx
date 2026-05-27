@@ -5,22 +5,22 @@ import { motion } from 'framer-motion';
 
 const planes = [
   {
-    nombre: 'Inicio',
-    descripcion: 'Para empezar',
-    features: ['Instalación remota', 'Configuración inicial', 'Capacitación básica', 'Soporte por email'],
+    nombre: 'Esencial',
+    descripcion: 'Para empezar ordenado',
+    features: ['Instalacion remota', 'Configuracion inicial', 'Carga base de productos', 'Capacitacion basica', 'Soporte inicial'],
     price: null,
   },
   {
-    nombre: 'Pro',
-    descripcion: 'Para negocios establecidos',
-    features: ['Todo de Inicio', 'Facturación SUNAT', 'Reportes avanzados', 'Soporte prioritario', 'Backup en la nube'],
+    nombre: 'Rubro',
+    descripcion: 'Para ferreteria o restaurante',
+    features: ['Todo de Esencial', 'Flujo especializado FERRO o RESTO', 'Facturacion electronica', 'Reportes de caja y ventas', 'Acompañamiento prioritario'],
     price: null,
     destacado: true,
   },
   {
-    nombre: 'Premium',
-    descripcion: 'Para empresas en crecimiento',
-    features: ['Todo de Pro', 'Personalización a medida', 'Soporte 24/7', 'Integraciones API', 'Visita técnica'],
+    nombre: 'A medida',
+    descripcion: 'Para crecer con mas control',
+    features: ['Todo de Rubro', 'Personalizacion segun proceso', 'Usuarios y permisos avanzados', 'Integraciones y mejoras', 'Seguimiento de implementacion'],
     price: null,
   },
 ];
@@ -40,10 +40,10 @@ export default function Planes() {
             <span className="brand-section-label">Planes</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="brand-gradient-text">Planes</span>
+            <span className="brand-gradient-text">Elige como empezar</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
-            Cotización personalizada según tus necesidades
+            Te recomendamos el alcance segun tu rubro, cantidad de usuarios, comprobantes y forma de trabajo.
           </p>
         </motion.div>
 
@@ -68,7 +68,7 @@ export default function Planes() {
               <div className="text-center mb-6 sm:mb-8">
                 <h3 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">{plan.nombre}</h3>
                 <p className="text-gray-400 text-sm sm:text-base">{plan.descripcion}</p>
-                <p className="mt-3 sm:mt-4 text-gray-300 text-sm sm:text-base">Cotización según negocio</p>
+                <p className="mt-3 sm:mt-4 text-gray-300 text-sm sm:text-base">Cotizacion segun negocio</p>
               </div>
 
               <ul className="space-y-2 sm:space-y-4">

@@ -1,12 +1,13 @@
 'use client';
 
-import { MessageCircle, Mail } from 'lucide-react';
+import { ExternalLink, Mail, MessageCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Contacto() {
   const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '51999999999';
   const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'contacto@ejemplo.com';
-  const whatsappMessage = 'Hola, quiero información sobre sus sistemas POS para mi negocio.';
+  const facebookUrl = 'https://www.facebook.com/profile.php?id=61589001599610&locale=es_LA';
+  const whatsappMessage = 'Hola, quiero informacion sobre FACTUSYS para mi negocio. Me interesa ver una demo.';
   return (
     <section id="contacto" className="section-spacing px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto text-center">
@@ -20,10 +21,10 @@ export default function Contacto() {
             <span className="brand-section-label">Contacto</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
-            <span className="brand-gradient-text">Hablemos</span>
+            <span className="brand-gradient-text">Te mostramos el sistema correcto</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 mb-8 sm:mb-12 px-2">
-            Cuéntanos sobre tu negocio y te mostramos cómo podemos ayudarte
+            Dinos si eres ferreteria, restaurante, tienda u otro negocio. Te guiamos con una demo y una cotizacion clara.
           </p>
         </motion.div>
 
@@ -32,7 +33,7 @@ export default function Contacto() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="flex flex-col gap-4 sm:flex-row sm:gap-6 justify-center"
+          className="flex flex-col gap-4 sm:flex-row sm:gap-4 justify-center"
         >
           <a
             href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}`}
@@ -50,6 +51,16 @@ export default function Contacto() {
           >
             <Mail size={20} className="sm:w-6 sm:h-6" />
             Enviar correo
+          </a>
+
+          <a
+            href={facebookUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-outline text-white font-medium px-8 sm:px-10 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg w-full sm:w-auto"
+          >
+            <ExternalLink size={20} className="sm:w-6 sm:h-6" />
+            Ver Facebook
           </a>
         </motion.div>
       </div>

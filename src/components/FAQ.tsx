@@ -6,36 +6,36 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const faqs = [
   {
-    pregunta: '¿El sistema funciona con SUNAT?',
-    respuesta: 'Sí, el sistema está preparado para facturación electrónica en Perú mediante integración con Nubefact.',
+    pregunta: '¿El sistema funciona con facturacion electronica?',
+    respuesta: 'Si. El sistema esta preparado para boletas, facturas, tickets y notas de credito mediante integracion con Nubefact/SUNAT.',
   },
   {
-    pregunta: '¿Necesito tener conocimientos técnicos?',
-    respuesta: 'No. El sistema está diseñado para que cualquier persona pueda usarlo desde el primer día.',
+    pregunta: '¿Hay un sistema para ferreteria y otro para restaurante?',
+    respuesta: 'Si. FACTUSYS FERRO esta pensado para inventario, codigos, compras, caja y cotizaciones. FACTUSYS RESTO esta pensado para mesas, pedidos, comandas, caja y cobro rapido.',
   },
   {
-    pregunta: '¿Funciona sin internet?',
-    respuesta: 'Sí, el sistema puede seguir operando y sincronizar cuando vuelva la conexión.',
+    pregunta: '¿Necesito conocimientos tecnicos?',
+    respuesta: 'No. Lo instalamos, configuramos y capacitamos a tu equipo para que pueda usarlo desde el primer dia.',
   },
   {
     pregunta: '¿Puedo probar antes de comprar?',
-    respuesta: 'Sí, puedes acceder a los demos desde esta página.',
+    respuesta: 'Si. Puedes abrir los demos de FERRO y RESTO desde esta pagina o pedir una demostracion guiada por WhatsApp.',
   },
   {
-    pregunta: '¿Cuánto tiempo toma la implementación?',
-    respuesta: 'La instalación y configuración se realiza en menos de 48 horas.',
+    pregunta: '¿Cuanto tiempo toma la implementacion?',
+    respuesta: 'La instalacion y configuracion inicial se puede realizar en menos de 48 horas, dependiendo de la informacion que tenga lista tu negocio.',
   },
   {
     pregunta: '¿Incluye soporte?',
-    respuesta: 'Sí, todos los planes incluyen soporte inicial y capacitación.',
+    respuesta: 'Si. Incluye soporte inicial, capacitacion y acompañamiento para resolver dudas durante la puesta en marcha.',
   },
   {
     pregunta: '¿Puedo usarlo en celular?',
-    respuesta: 'Sí, el sistema es completamente responsive.',
+    respuesta: 'Si. El sistema es responsive y se puede revisar desde celular, tablet o computadora segun el flujo de tu negocio.',
   },
   {
-    pregunta: '¿Se adapta a mi negocio?',
-    respuesta: 'Sí, el sistema puede configurarse para distintos tipos de negocios.',
+    pregunta: '¿Se puede adaptar a mi negocio?',
+    respuesta: 'Si. Podemos configurar productos, usuarios, comprobantes, metodos de pago y procesos segun tu forma de trabajo.',
   },
 ];
 

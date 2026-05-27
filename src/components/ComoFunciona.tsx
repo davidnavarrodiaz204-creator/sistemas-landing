@@ -6,23 +6,23 @@ import { motion } from 'framer-motion';
 const pasos = [
   {
     icon: Monitor,
-    title: 'Demo',
-    desc: 'Explora el sistema con datos reales y descubre todas las funcionalidades',
+    title: 'Demo guiada',
+    desc: 'Vemos si tu negocio necesita FERRO, RESTO o una adaptacion especial',
   },
   {
     icon: Settings,
-    title: 'Configuración',
-    desc: 'Adaptamos el sistema a tu negocio: productos, precios, impuestos y más',
+    title: 'Configuracion',
+    desc: 'Preparamos productos, usuarios, comprobantes, caja y metodos de pago',
   },
   {
     icon: GraduationCap,
-    title: 'Capacitación',
-    desc: 'Entrenamos a tu equipo para que aprovechen al máximo el sistema',
+    title: 'Capacitacion',
+    desc: 'Entrenamos a tu equipo con las pantallas que usara todos los dias',
   },
   {
     icon: Rocket,
     title: 'Puesta en marcha',
-    desc: 'Inicias operaciones con soporte técnico completo y seguimiento',
+    desc: 'Empiezas a vender con soporte y seguimiento durante el arranque',
   },
 ];
 
@@ -44,7 +44,7 @@ export default function ComoFunciona() {
             <span className="brand-gradient-text">Cómo funciona</span>
           </h2>
           <p className="text-base sm:text-xl text-gray-400 font-light px-2">
-            Proceso simple y transparente para empezar
+            Te acompañamos desde la demo hasta el primer dia de uso
           </p>
         </motion.div>
 
