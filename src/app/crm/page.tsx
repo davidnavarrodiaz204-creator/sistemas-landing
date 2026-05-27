@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import InternalGuard from '@/components/InternalGuard';
 import {
   ASSISTANT_INTENTS,
@@ -10,6 +10,14 @@ import {
   getRecommendedIntent,
   type AssistantIntent,
 } from '@/lib/crm-ai/salesAssistant';
+import {
+  deleteProspect as deleteStoredProspect,
+  exportProspects as replaceStoredProspects,
+  getProspects as getStoredProspects,
+  importProspects as importStoredProspects,
+  saveProspect as saveStoredProspect,
+  updateProspect as updateStoredProspect,
+} from '@/lib/crm-storage/crmStorage';
 import {
   DEFAULT_DAILY_WHATSAPP_LIMIT,
   getSendBlockReason,
@@ -63,9 +71,6 @@ type Prospect = WhatsAppProspectControl & {
 };
 
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
-
-const STORAGE_KEY = 'factusys_crm_prospects_v3';
-const LEGACY_STORAGE_KEYS = ['factusys_crm_prospects_v2', 'factusys_crm_prospects_v1'];
 
 const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Ferretería', 'Tienda', 'Otro'];
 const INTERESES: Interes[] = ['RESTO', 'FERRO', 'Ambos'];
@@ -190,28 +195,6 @@ function migrateEstado(value: string): Estado {
   return 'Nuevo';
 }
 
-function loadProspects() {
-  if (typeof window === 'undefined') return DEMO_PROSPECTS;
-  const stored = window.localStorage.getItem(STORAGE_KEY) || LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean);
-  if (!stored) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(DEMO_PROSPECTS));
-    return DEMO_PROSPECTS;
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-    const prospects = Array.isArray(parsed) ? parsed.map(normalizeProspect) : DEMO_PROSPECTS;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prospects));
-    return prospects;
-  } catch {
-    return DEMO_PROSPECTS;
-  }
-}
-
-function saveProspects(prospects: Prospect[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prospects));
-}
-
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, '');
   return digits.startsWith('51') ? digits : `51${digits}`;
@@ -259,7 +242,7 @@ export default function CrmPage() {
 }
 
 function CrmApp() {
-  const [prospects, setProspects] = useState<Prospect[]>(loadProspects);
+  const [prospects, setProspects] = useState<Prospect[]>(DEMO_PROSPECTS);
   const [form, setForm] = useState<ProspectForm>(EMPTY_FORM);
   const [search, setSearch] = useState('');
   const [rubroFilter, setRubroFilter] = useState('Todos');
@@ -271,6 +254,18 @@ function CrmApp() {
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantCopied, setAssistantCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    getStoredProspects(DEMO_PROSPECTS, normalizeProspect).then((storedProspects) => {
+      if (active) setProspects(storedProspects);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredProspects = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -308,11 +303,6 @@ function CrmApp() {
     };
   }, [prospects]);
 
-  const persist = (nextProspects: Prospect[]) => {
-    setProspects(nextProspects);
-    saveProspects(nextProspects);
-  };
-
   const setField = <K extends keyof ProspectForm>(key: K, value: ProspectForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -320,12 +310,15 @@ function CrmApp() {
   const addProspect = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.negocio.trim() || !form.contacto.trim() || !form.telefono.trim()) return;
-    persist([{ ...form, id: `prospect-${Date.now().toString(36)}`, createdAt: new Date().toISOString() }, ...prospects]);
+    const prospect = { ...form, id: `prospect-${Date.now().toString(36)}`, createdAt: new Date().toISOString() };
+    setProspects([prospect, ...prospects]);
+    void saveStoredProspect(prospect, prospects);
     setForm(EMPTY_FORM);
   };
 
   const updateProspect = (id: string, patch: Partial<Prospect>) => {
-    persist(prospects.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setProspects(prospects.map((item) => item.id === id ? { ...item, ...patch } : item));
+    void updateStoredProspect(id, patch, prospects);
   };
 
   const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}, messageOverride?: string) => {
@@ -340,17 +333,33 @@ function CrmApp() {
       createdAt: new Date().toISOString(),
     };
 
-    persist(prospects.map((item) => item.id === prospect.id ? {
-      ...item,
+    const patchWithHistory = {
       ultimoMensajeEnviado: message,
-      historialMensajes: [entry, ...(item.historialMensajes || [])],
+      historialMensajes: [entry, ...(prospect.historialMensajes || [])],
       ...patch,
-    } : item));
+    } as Partial<Prospect>;
+
+    updateProspect(prospect.id, patchWithHistory);
+  };
+
+  const deleteProspect = (id: string) => {
+    setProspects(prospects.filter((item) => item.id !== id));
+    void deleteStoredProspect(id, prospects);
+  };
+
+  const importProspectList = (imported: Prospect[]) => {
+    setProspects([...imported, ...prospects]);
+    void importStoredProspects(imported, prospects);
+  };
+
+  const clearProspects = () => {
+    setProspects([]);
+    void replaceStoredProspects([]);
   };
 
   const clearDemo = () => {
     if (!window.confirm('¿Limpiar todos los datos del CRM?')) return;
-    persist([]);
+    clearProspects();
   };
 
   const copyMessage = async (prospect: Prospect) => {
@@ -437,7 +446,7 @@ function CrmApp() {
     const text = await file.text();
     const imported = parseCsv(text);
     if (imported.length === 0) return;
-    persist([...imported, ...prospects]);
+    importProspectList(imported);
   };
 
   return (
@@ -498,7 +507,7 @@ function CrmApp() {
               interesFilter={interesFilter}
               setInteresFilter={setInteresFilter}
             />
-            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={(id) => persist(prospects.filter((item) => item.id !== id))} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={deleteProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
           </div>
         </section>
       </div>
