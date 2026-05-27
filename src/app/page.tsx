@@ -1,6 +1,8 @@
 import Hero from '@/components/Hero';
 import Beneficios from '@/components/Beneficios';
 import Productos from '@/components/Productos';
+import SistemaShowcase from '@/components/SistemaShowcase';
+import CasosRubros from '@/components/CasosRubros';
 import ComoFunciona from '@/components/ComoFunciona';
 import PruebaSocial from '@/components/PruebaSocial';
 import SistemaAccion from '@/components/SistemaAccion';
@@ -15,6 +17,8 @@ export default function Home() {
       <Hero />
       <Beneficios />
       <Productos />
+      <SistemaShowcase />
+      <CasosRubros />
       <ComoFunciona />
       <PruebaSocial />
       <SistemaAccion />

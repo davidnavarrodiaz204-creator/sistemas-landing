@@ -445,6 +445,172 @@ main {
   padding: 0.7rem 0.8rem;
 }
 
+.crm-mini-card,
+.crm-pipeline-column {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.showcase-card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.showcase-card:hover {
+  border-color: rgba(0, 230, 118, 0.35);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+}
+
+.showcase-card h3 {
+  color: #0b1220;
+}
+
+.showcase-card p {
+  color: #536174;
+}
+
+.rubros-summary {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 999px;
+  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  width: fit-content;
+}
+
+.rubros-summary span {
+  background: rgba(15, 23, 42, 0.045);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+}
+
+.rubro-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.25rem;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.rubro-card:hover {
+  border-color: rgba(0, 230, 118, 0.34);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  transform: translateY(-3px);
+}
+
+.rubro-logo,
+.rubro-mock-logo {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.rubro-logo {
+  background: rgba(0, 230, 118, 0.12);
+  border: 1px solid rgba(0, 230, 118, 0.22);
+  border-radius: 1rem;
+  color: #00a85a;
+  height: 3rem;
+  width: 3rem;
+}
+
+.rubro-mock-logo {
+  background: #0b1220;
+  border-radius: 0.85rem;
+  color: #00e676;
+  font-size: 0.78rem;
+  font-weight: 800;
+  height: 2.25rem;
+  letter-spacing: 0.08em;
+  width: 2.25rem;
+}
+
+.rubro-title {
+  color: #0b1220;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.rubro-label {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rubro-copy {
+  color: #334155;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin-top: 0.35rem;
+}
+
+.rubro-module,
+.rubro-badge,
+.rubro-stat {
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.rubro-module {
+  background: rgba(15, 23, 42, 0.055);
+  color: #334155;
+  padding: 0.42rem 0.7rem;
+}
+
+.rubro-badge {
+  align-items: center;
+  background: rgba(0, 230, 118, 0.1);
+  color: #008d4c;
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.42rem 0.7rem;
+}
+
+.rubro-stat {
+  background: rgba(15, 23, 42, 0.045);
+  color: #0b1220;
+  padding: 0.7rem 0.8rem;
+  text-align: center;
+}
+
+.rubro-cta {
+  align-items: center;
+  background: #00e676;
+  border-radius: 999px;
+  color: #00130a;
+  display: inline-flex;
+  font-size: 0.92rem;
+  font-weight: 800;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: auto;
+  min-height: 2.75rem;
+  padding: 0.78rem 1rem;
+  text-decoration: none;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.rubro-cta:hover {
+  background: #00c853;
+  transform: translateY(-1px);
+}
+
 html:not(.theme-day) .crm-page {
   background:
     radial-gradient(circle at 20% 10%, rgba(0, 230, 118, 0.08), transparent 28%),
@@ -493,4 +659,60 @@ html:not(.theme-day) .crm-note,
 html:not(.theme-day) .crm-badge {
   background: rgba(255, 255, 255, 0.055);
   color: #cbd5e1;
+}
+
+html:not(.theme-day) .crm-mini-card,
+html:not(.theme-day) .crm-pipeline-column {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html:not(.theme-day) .crm-mini-card p {
+  color: #ffffff;
+}
+
+html:not(.theme-day) .showcase-card {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.22);
+}
+
+html:not(.theme-day) .showcase-card h3 {
+  color: #ffffff;
+}
+
+html:not(.theme-day) .showcase-card p {
+  color: #94a3b8;
+}
+
+html:not(.theme-day) .rubros-summary,
+html:not(.theme-day) .rubro-card {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.22);
+}
+
+html:not(.theme-day) .rubros-summary,
+html:not(.theme-day) .rubro-copy {
+  color: #cbd5e1;
+}
+
+html:not(.theme-day) .rubros-summary span,
+html:not(.theme-day) .rubro-module,
+html:not(.theme-day) .rubro-stat {
+  background: rgba(255, 255, 255, 0.055);
+  color: #e2e8f0;
+}
+
+html:not(.theme-day) .rubro-title {
+  color: #ffffff;
+}
+
+html:not(.theme-day) .rubro-label {
+  color: #94a3b8;
+}
+
+html:not(.theme-day) .rubro-mock-logo {
+  background: #ffffff;
+  color: #00130a;
 }
