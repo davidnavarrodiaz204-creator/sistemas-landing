@@ -88,8 +88,18 @@ type LeadCandidate = {
   savedProspectId?: string;
   duplicateReason?: string;
 };
+type SalesDailyLog = {
+  date: string;
+  newContacts: number;
+  followUps: number;
+  demosOffered: number;
+  responses: number;
+  nextFollowUps: number;
+  notes: string;
+};
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
+const SALES_DAILY_LOG_KEY = 'factusys_crm_sales_daily_log_v1';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
@@ -131,6 +141,21 @@ const EMPTY_FORM: ProspectForm = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+function loadSalesDailyLogs(): SalesDailyLog[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SALES_DAILY_LOG_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSalesDailyLogs(logs: SalesDailyLog[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SALES_DAILY_LOG_KEY, JSON.stringify(logs.slice(0, 30)));
+}
 
 const DEMO_PROSPECTS: Prospect[] = [
   {
@@ -385,6 +410,8 @@ function CrmApp() {
   const [leadFuente, setLeadFuente] = useState<Origen>('Google Maps');
   const [leadImportText, setLeadImportText] = useState('');
   const [leadCandidates, setLeadCandidates] = useState<LeadCandidate[]>([]);
+  const [dailyLogs, setDailyLogs] = useState<SalesDailyLog[]>(() => loadSalesDailyLogs());
+  const [workdayStarted, setWorkdayStarted] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [assistantProspect, setAssistantProspect] = useState<Prospect | null>(null);
   const [assistantIntent, setAssistantIntent] = useState<AssistantIntent>('Primer contacto');
@@ -432,6 +459,32 @@ function CrmApp() {
       .filter((item) => item.fechaProximoContacto && item.fechaProximoContacto <= current && item.estado !== 'Cerrado' && item.estado !== 'Perdido')
       .sort((a, b) => a.fechaProximoContacto.localeCompare(b.fechaProximoContacto));
   }, [prospects]);
+
+  const dailyProgress = useMemo(() => {
+    const current = today();
+    const messagesToday = prospects.flatMap((prospect) => (
+      (prospect.historialMensajes || []).map((message) => ({ ...message, prospect }))
+    )).filter((item) => item.createdAt.slice(0, 10) === current);
+
+    return {
+      newContacts: messagesToday.filter((item) => item.status === 'sent_marked').length,
+      followUps: messagesToday.filter((item) => item.status === 'prepared' || item.status === 'opened_whatsapp' || item.status === 'sent_marked').length,
+      demosOffered: prospects.filter((item) => item.estado === 'Demo 30 días ofrecida' && item.fechaUltimoContacto === current).length,
+      responses: messagesToday.filter((item) => item.status === 'answered').length,
+      nextFollowUps: contactToday.length,
+    };
+  }, [contactToday.length, prospects]);
+
+  const workdayFocusProspects = useMemo(() => {
+    const seen = new Set<string>();
+    return [...contactToday, ...prospects.filter((item) => item.estado === 'Nuevo')]
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return item.estado !== 'Cerrado' && item.estado !== 'Perdido';
+      })
+      .slice(0, 6);
+  }, [contactToday, prospects]);
 
   const metrics = useMemo(() => ({
     total: prospects.length,
@@ -615,6 +668,31 @@ function CrmApp() {
     clearProspects();
   };
 
+  const startWorkday = () => {
+    setWorkdayStarted(true);
+    setSearch('');
+    setRubroFilter('Todos');
+    setEstadoFilter('Todos');
+    setInteresFilter('Todos');
+  };
+
+  const closeWorkday = () => {
+    const notes = window.prompt('Notas rápidas del cierre de jornada:', '') || '';
+    const log: SalesDailyLog = {
+      date: today(),
+      newContacts: dailyProgress.newContacts,
+      followUps: dailyProgress.followUps,
+      demosOffered: dailyProgress.demosOffered,
+      responses: dailyProgress.responses,
+      nextFollowUps: dailyProgress.nextFollowUps,
+      notes,
+    };
+    const nextLogs = [log, ...dailyLogs.filter((item) => item.date !== log.date)];
+    setDailyLogs(nextLogs);
+    saveSalesDailyLogs(nextLogs);
+    window.alert(`Jornada cerrada:\nContactos hechos: ${log.newContacts}\nRespuestas recibidas: ${log.responses}\nDemos ofrecidas: ${log.demosOffered}\nPróximos seguimientos: ${log.nextFollowUps}`);
+  };
+
   const copyMessage = async (prospect: Prospect) => {
     await navigator.clipboard.writeText(getMessage(prospect.interes));
     setCopiedId(prospect.id);
@@ -777,6 +855,17 @@ function CrmApp() {
           </div>
         </header>
 
+        <section className="mb-6">
+          <DailySalesPlanPanel
+            progress={dailyProgress}
+            logs={dailyLogs}
+            focusProspects={workdayFocusProspects}
+            started={workdayStarted}
+            onStart={startWorkday}
+            onClose={closeWorkday}
+          />
+        </section>
+
         <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
           <MetricCard label="Prospectos totales" value={metrics.total} />
           <MetricCard label="Contactados" value={metrics.contactados} />
@@ -882,6 +971,118 @@ function CrmApp() {
         />
       )}
     </main>
+  );
+}
+
+function DailySalesPlanPanel({
+  progress,
+  logs,
+  focusProspects,
+  started,
+  onStart,
+  onClose,
+}: {
+  progress: Pick<SalesDailyLog, 'newContacts' | 'followUps' | 'demosOffered' | 'responses' | 'nextFollowUps'>;
+  logs: SalesDailyLog[];
+  focusProspects: Prospect[];
+  started: boolean;
+  onStart: () => void;
+  onClose: () => void;
+}) {
+  const goals = [
+    { label: 'Contactos nuevos hoy', value: progress.newContacts, target: 10 },
+    { label: 'Seguimientos hechos hoy', value: progress.followUps, target: 3 },
+    { label: 'Demos ofrecidas hoy', value: progress.demosOffered, target: 1 },
+  ];
+  const actions = ['Agrega 5 pollerías/restaurantes', 'Agrega 5 ferreterías', 'Contacta prospectos nuevos', 'Da seguimiento a interesados', 'Agenda demo si responde'];
+
+  return (
+    <div className="crm-card p-5 sm:p-6">
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div>
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="crm-eyebrow mb-2">Plan de ventas de hoy</p>
+              <h2 className="crm-section-title text-2xl">Rutina diaria FACTUSYS</h2>
+              <p className="crm-muted mt-1 text-sm">Meta simple para avanzar sin desorden: nuevos contactos, seguimientos y demos ofrecidas.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" className="crm-button-primary justify-center" onClick={onStart}>Empezar jornada</button>
+              <button type="button" className="crm-button-secondary justify-center" onClick={onClose}>Cerrar jornada</button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {goals.map((goal) => {
+              const percent = Math.min((goal.value / goal.target) * 100, 100);
+              return (
+                <div key={goal.label} className="crm-mini-card rounded-2xl p-4">
+                  <p className="crm-muted text-xs font-bold uppercase">{goal.label}</p>
+                  <p className="crm-number mt-2">{goal.value}/{goal.target}</p>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
+                    <div className="h-full rounded-full bg-neon transition-all" style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+            <div className="crm-note">
+              <p className="mb-2 font-bold">Acciones recomendadas</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {actions.map((action) => (
+                  <span key={action} className="flex items-center gap-2 text-sm"><CheckCircle2 size={15} className="text-neon" />{action}</span>
+                ))}
+              </div>
+            </div>
+            <div className="crm-note">
+              <p className="font-bold">Resumen rápido</p>
+              <p className="mt-1 text-sm">Respuestas recibidas: {progress.responses}</p>
+              <p className="text-sm">Próximos seguimientos: {progress.nextFollowUps}</p>
+            </div>
+          </div>
+
+          {started && (
+            <div className="mt-4">
+              <p className="crm-muted mb-2 text-xs font-bold uppercase">Enfoque de jornada</p>
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {focusProspects.length === 0 && <p className="crm-note text-sm">No hay nuevos ni seguimientos vencidos. Agrega prospectos desde Buscar prospectos.</p>}
+                {focusProspects.map((prospect) => (
+                  <div key={prospect.id} className="crm-mini-card rounded-xl p-3">
+                    <p className="font-bold text-slate-900">{prospect.negocio}</p>
+                    <p className="crm-muted text-xs">{prospect.estado} · {prospect.fechaProximoContacto || 'sin seguimiento'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="crm-mini-card rounded-2xl p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="crm-section-title text-base">Historial de jornadas</h3>
+              <p className="crm-muted text-xs">Últimos 7 días guardados</p>
+            </div>
+            <CalendarClock className="text-neon" size={22} />
+          </div>
+          <div className="space-y-2">
+            {logs.slice(0, 7).length === 0 && <p className="crm-muted rounded-xl border border-dashed border-black/10 p-3 text-center text-xs">Aún no cierras ninguna jornada.</p>}
+            {logs.slice(0, 7).map((log) => (
+              <div key={log.date} className="rounded-xl border border-black/10 bg-white/50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-bold text-slate-900">{log.date}</p>
+                  <span className="crm-badge">{log.newContacts} contactos</span>
+                </div>
+                <p className="crm-muted mt-1 text-xs">Seguimientos {log.followUps} · Demos {log.demosOffered} · Respuestas {log.responses}</p>
+                {log.notes && <p className="crm-muted mt-1 line-clamp-2 text-xs">{log.notes}</p>}
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
   );
 }
 
