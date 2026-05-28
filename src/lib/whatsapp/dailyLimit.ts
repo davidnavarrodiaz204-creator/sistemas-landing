@@ -41,6 +41,7 @@ export function getSendBlockReason(
   prospect: LimitProspect,
   limit = DEFAULT_DAILY_WHATSAPP_LIMIT,
 ) {
+  if (!prospect.telefono.replace(/\D/g, '')) return 'Falta WhatsApp del prospecto';
   if (prospect.permisoContacto === 'No contactar') return 'Prospecto marcado como No contactar';
   if (sentMessagesToday(prospects) >= limit) return 'Límite diario alcanzado';
   if (wasPhoneContactedToday(prospects, prospect.telefono)) return 'Este número ya fue contactado hoy';

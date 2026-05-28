@@ -49,10 +49,10 @@ import {
   X,
 } from 'lucide-react';
 
-type Rubro = 'Restaurante' | 'Pollería' | 'Ferretería' | 'Tienda' | 'Otro';
+type Rubro = 'Restaurante' | 'Pollería' | 'Cevichería' | 'Ferretería' | 'Minimarket' | 'Tienda' | 'Otro';
 type Interes = 'RESTO' | 'FERRO' | 'Ambos';
 type Estado = 'Nuevo' | 'Contactado' | 'Interesado' | 'Demo 30 días ofrecida' | 'Demo activa' | 'Reunión agendada' | 'Cerrado' | 'Perdido';
-type Origen = 'Google Maps' | 'Facebook' | 'Referido' | 'Visita directa' | 'Otro';
+type Origen = 'Google Maps' | 'Facebook' | 'TikTok' | 'Instagram' | 'Referido' | 'Manual' | 'Visita directa' | 'Otro';
 
 type Prospect = WhatsAppProspectControl & {
   id: string;
@@ -73,18 +73,36 @@ type Prospect = WhatsAppProspectControl & {
 };
 
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
+type LeadCandidate = {
+  id: string;
+  nombre: string;
+  rubro: Rubro;
+  zona: string;
+  link: string;
+  telefono: string;
+  redSocial: string;
+  contacto: string;
+  interes: Interes;
+  fuente: Origen;
+  nota: string;
+  savedProspectId?: string;
+  duplicateReason?: string;
+};
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
 
-const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Ferretería', 'Tienda', 'Otro'];
+const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Cevichería', 'Ferretería', 'Minimarket', 'Tienda', 'Otro'];
 const INTERESES: Interes[] = ['RESTO', 'FERRO', 'Ambos'];
 const ESTADOS: Estado[] = ['Nuevo', 'Contactado', 'Interesado', 'Demo 30 días ofrecida', 'Demo activa', 'Reunión agendada', 'Cerrado', 'Perdido'];
-const ORIGENES: Origen[] = ['Google Maps', 'Facebook', 'Referido', 'Visita directa', 'Otro'];
+const ORIGENES: Origen[] = ['Google Maps', 'Facebook', 'TikTok', 'Instagram', 'Referido', 'Manual', 'Visita directa', 'Otro'];
 const PERMISOS_CONTACTO: ContactPermission[] = ['Pendiente', 'Aceptó contacto', 'No contactar'];
 const ESTADOS_CONVERSACION: ConversationStatus[] = ['Sin respuesta', 'Respondió', 'Interesado', 'Demo activa', 'No contactar'];
+
+const LEAD_SEARCH_RUBROS: Rubro[] = ['Pollería', 'Restaurante', 'Cevichería', 'Ferretería', 'Minimarket', 'Otro'];
+const LEAD_SOURCES: Origen[] = ['Google Maps', 'Facebook', 'TikTok', 'Instagram', 'Referido', 'Manual'];
 
 const DEFAULT_WHATSAPP_CONTROL: WhatsAppProspectControl = {
   permisoContacto: 'Pendiente',
@@ -219,6 +237,78 @@ function getMessage(interes: Interes) {
   return getWhatsAppMessage(interes);
 }
 
+function inferInterestFromRubro(rubro: Rubro): Interes {
+  if (rubro === 'Ferretería' || rubro === 'Tienda' || rubro === 'Minimarket') return 'FERRO';
+  if (rubro === 'Restaurante' || rubro === 'Pollería' || rubro === 'Cevichería') return 'RESTO';
+  return 'Ambos';
+}
+
+function buildPublicSearchUrl(source: Origen | 'maps' | 'facebook' | 'instagram' | 'tiktok', rubro: string, zona: string) {
+  const query = encodeURIComponent(`${rubro} en ${zona}`.trim());
+  const urls = {
+    maps: `https://www.google.com/maps/search/${query}`,
+    'Google Maps': `https://www.google.com/maps/search/${query}`,
+    facebook: `https://www.facebook.com/search/pages/?q=${query}`,
+    Facebook: `https://www.facebook.com/search/pages/?q=${query}`,
+    instagram: `https://www.google.com/search?q=${query}+Instagram`,
+    Instagram: `https://www.google.com/search?q=${query}+Instagram`,
+    tiktok: `https://www.google.com/search?q=${query}+TikTok`,
+    TikTok: `https://www.google.com/search?q=${query}+TikTok`,
+    Referido: '',
+    Manual: '',
+    'Visita directa': '',
+    Otro: '',
+  };
+
+  return urls[source];
+}
+
+function normalizeComparable(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function findDuplicateReason(candidate: LeadCandidate, prospects: Prospect[], candidates: LeadCandidate[] = []) {
+  const phone = candidate.telefono.replace(/\D/g, '');
+  const name = normalizeComparable(candidate.nombre);
+  const link = normalizeComparable(candidate.link || candidate.redSocial);
+  const otherCandidates = candidates.filter((item) => item.id !== candidate.id && !item.savedProspectId);
+
+  if (phone && prospects.some((item) => item.telefono.replace(/\D/g, '') === phone)) return 'WhatsApp ya existe en CRM';
+  if (phone && otherCandidates.some((item) => item.telefono.replace(/\D/g, '') === phone)) return 'WhatsApp duplicado en la previsualización';
+  if (name && prospects.some((item) => normalizeComparable(item.negocio) === name)) return 'Nombre ya existe en CRM';
+  if (name && otherCandidates.some((item) => normalizeComparable(item.nombre) === name)) return 'Nombre duplicado en la previsualización';
+  if (link && prospects.some((item) => normalizeComparable(item.redSocial) === link)) return 'Link ya existe en CRM';
+  if (link && otherCandidates.some((item) => normalizeComparable(item.link || item.redSocial) === link)) return 'Link duplicado en la previsualización';
+
+  return '';
+}
+
+function parseLeadText(text: string, defaultRubro: Rubro, defaultFuente: Origen): LeadCandidate[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [nombre = '', zona = '', telefono = '', fuente = defaultFuente, linkOrNote = ''] = line.split('|').map((part) => part.trim());
+      const parsedFuente = LEAD_SOURCES.includes(fuente as Origen) ? fuente as Origen : defaultFuente;
+
+      return {
+        id: `lead-import-${Date.now().toString(36)}-${index}`,
+        nombre,
+        rubro: defaultRubro,
+        zona,
+        link: linkOrNote.startsWith('http') ? linkOrNote : '',
+        telefono,
+        redSocial: linkOrNote.startsWith('http') ? linkOrNote : '',
+        contacto: '',
+        interes: inferInterestFromRubro(defaultRubro),
+        fuente: parsedFuente,
+        nota: linkOrNote.startsWith('http') ? '' : linkOrNote,
+      };
+    })
+    .filter((item) => item.nombre);
+}
+
 function toCsvValue(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -290,6 +380,11 @@ function CrmApp() {
   const [rubroFilter, setRubroFilter] = useState('Todos');
   const [estadoFilter, setEstadoFilter] = useState('Todos');
   const [interesFilter, setInteresFilter] = useState('Todos');
+  const [leadRubro, setLeadRubro] = useState<Rubro>('Pollería');
+  const [leadZona, setLeadZona] = useState('Paita');
+  const [leadFuente, setLeadFuente] = useState<Origen>('Google Maps');
+  const [leadImportText, setLeadImportText] = useState('');
+  const [leadCandidates, setLeadCandidates] = useState<LeadCandidate[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [assistantProspect, setAssistantProspect] = useState<Prospect | null>(null);
   const [assistantIntent, setAssistantIntent] = useState<AssistantIntent>('Primer contacto');
@@ -367,6 +462,82 @@ function CrmApp() {
     setProspects([prospect, ...prospects]);
     void saveStoredProspect(prospect, prospects);
     setForm(EMPTY_FORM);
+  };
+
+  const createLeadCandidate = () => {
+    const zona = leadZona.trim();
+    if (!zona) return;
+
+    setLeadCandidates((current) => [
+      {
+        id: `lead-${Date.now().toString(36)}`,
+        nombre: '',
+        rubro: leadRubro,
+        zona,
+        link: buildPublicSearchUrl(leadFuente, leadRubro, zona),
+        telefono: '',
+        redSocial: '',
+        contacto: '',
+        interes: inferInterestFromRubro(leadRubro),
+        fuente: leadFuente,
+        nota: '',
+      },
+      ...current,
+    ]);
+  };
+
+  const updateLeadCandidate = (id: string, patch: Partial<LeadCandidate>) => {
+    setLeadCandidates((current) => current.map((candidate) => (
+      candidate.id === id ? { ...candidate, ...patch, duplicateReason: '' } : candidate
+    )));
+  };
+
+  const importLeadCandidates = () => {
+    const imported = parseLeadText(leadImportText, leadRubro, leadFuente);
+    if (imported.length === 0) {
+      window.alert('Pega al menos una línea con nombre de negocio.');
+      return;
+    }
+    setLeadCandidates((current) => [...imported, ...current]);
+    setLeadImportText('');
+  };
+
+  const addLeadToCrm = (candidate: LeadCandidate) => {
+    if (!candidate.nombre.trim()) {
+      window.alert('Agrega el nombre del negocio antes de pasarlo al CRM.');
+      return;
+    }
+
+    const duplicateReason = findDuplicateReason(candidate, prospects, leadCandidates);
+    if (duplicateReason) {
+      setLeadCandidates((current) => current.map((item) => (
+        item.id === candidate.id ? { ...item, duplicateReason } : item
+      )));
+      return;
+    }
+
+    const prospect = normalizeProspect({
+      negocio: candidate.nombre.trim(),
+      rubro: candidate.rubro,
+      zona: candidate.zona,
+      contacto: candidate.contacto || 'Por confirmar',
+      telefono: candidate.telefono,
+      redSocial: candidate.redSocial || candidate.link,
+      interes: candidate.interes,
+      estado: 'Nuevo',
+      fechaUltimoContacto: '',
+      fechaProximoContacto: today(),
+      nota: `${candidate.nota ? `${candidate.nota}\n` : ''}Prospecto revisado desde búsqueda pública. Link: ${candidate.link || 'sin link'}`,
+      origen: candidate.fuente,
+      createdAt: new Date().toISOString(),
+      isDemo: false,
+    });
+
+    setProspects([prospect, ...prospects]);
+    void saveStoredProspect(prospect, prospects);
+    setLeadCandidates((current) => current.map((item) => (
+      item.id === candidate.id ? { ...item, savedProspectId: prospect.id, duplicateReason: '' } : item
+    )));
   };
 
   const updateProspect = (id: string, patch: Partial<Prospect>) => {
@@ -643,6 +814,29 @@ function CrmApp() {
           />
         </section>
 
+        <section className="mb-6">
+          <LeadProspectingPanel
+            rubro={leadRubro}
+            zona={leadZona}
+            fuente={leadFuente}
+            importText={leadImportText}
+            prospects={prospects}
+            candidates={leadCandidates}
+            onRubroChange={setLeadRubro}
+            onZonaChange={setLeadZona}
+            onFuenteChange={setLeadFuente}
+            onImportTextChange={setLeadImportText}
+            onCreateCandidate={createLeadCandidate}
+            onImportCandidates={importLeadCandidates}
+            onUpdateCandidate={updateLeadCandidate}
+            onAddToCrm={addLeadToCrm}
+            onPrepareSaved={(prospectId) => {
+              const saved = prospects.find((item) => item.id === prospectId);
+              if (saved) prepareMessage(saved);
+            }}
+          />
+        </section>
+
         <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
           <OfferCard />
           <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
@@ -796,6 +990,126 @@ function OpenWaStatusPanel({
           <Wifi size={16} />
           {testing ? 'Probando...' : 'Probar conexión'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function LeadProspectingPanel({
+  rubro,
+  zona,
+  fuente,
+  importText,
+  prospects,
+  candidates,
+  onRubroChange,
+  onZonaChange,
+  onFuenteChange,
+  onImportTextChange,
+  onCreateCandidate,
+  onImportCandidates,
+  onUpdateCandidate,
+  onAddToCrm,
+  onPrepareSaved,
+}: {
+  rubro: Rubro;
+  zona: string;
+  fuente: Origen;
+  importText: string;
+  prospects: Prospect[];
+  candidates: LeadCandidate[];
+  onRubroChange: (value: Rubro) => void;
+  onZonaChange: (value: string) => void;
+  onFuenteChange: (value: Origen) => void;
+  onImportTextChange: (value: string) => void;
+  onCreateCandidate: () => void;
+  onImportCandidates: () => void;
+  onUpdateCandidate: (id: string, patch: Partial<LeadCandidate>) => void;
+  onAddToCrm: (candidate: LeadCandidate) => void;
+  onPrepareSaved: (prospectId: string) => void;
+}) {
+  const mapsUrl = buildPublicSearchUrl('maps', rubro, zona);
+  const facebookUrl = buildPublicSearchUrl('facebook', rubro, zona);
+  const instagramUrl = buildPublicSearchUrl('instagram', rubro, zona);
+  const tiktokUrl = buildPublicSearchUrl('tiktok', rubro, zona);
+
+  return (
+    <div className="crm-card p-5">
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="crm-eyebrow mb-2">Prospección local</p>
+          <h2 className="crm-section-title">Buscar negocios y revisar antes de contactar</h2>
+          <p className="crm-muted mt-1 max-w-3xl text-sm">Flujo controlado: buscas datos públicos, revisas nombre, zona, teléfono o red social, agregas al CRM y recién preparas el mensaje.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[150px_1fr_150px_auto] lg:min-w-[720px]">
+          <Select value={rubro} options={LEAD_SEARCH_RUBROS} onChange={(value) => onRubroChange(value as Rubro)} />
+          <input className="crm-input" value={zona} onChange={(event) => onZonaChange(event.target.value)} placeholder="Zona o ciudad, ej. Paita" />
+          <Select value={fuente} options={LEAD_SOURCES} onChange={(value) => onFuenteChange(value as Origen)} />
+          <button type="button" className="crm-button-primary justify-center" onClick={onCreateCandidate}><Plus size={16} />Agregar candidato</button>
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-2 md:grid-cols-4">
+        <a className="crm-button-secondary justify-center" href={mapsUrl} target="_blank" rel="noreferrer">Google Maps</a>
+        <a className="crm-button-secondary justify-center" href={facebookUrl} target="_blank" rel="noreferrer">Facebook</a>
+        <a className="crm-button-secondary justify-center" href={instagramUrl} target="_blank" rel="noreferrer">Instagram</a>
+        <a className="crm-button-secondary justify-center" href={tiktokUrl} target="_blank" rel="noreferrer">TikTok</a>
+      </div>
+
+      {candidates.length === 0 && (
+        <div className="crm-note text-sm">
+          Ejemplo de uso: busca “pollerías en Paita”, abre Maps o Facebook, revisa cada negocio y pulsa “Agregar candidato” para copiar los datos encontrados sin inventar información.
+        </div>
+      )}
+
+      <div className="my-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+        <textarea
+          className="crm-input min-h-28 resize-none text-sm"
+          value={importText}
+          onChange={(event) => onImportTextChange(event.target.value)}
+          placeholder={'Pega varios prospectos, uno por línea:\nPollería El Buen Sabor | Paita | 999999999 | Facebook\nFerretería San José | Piura | 988888888 | Google Maps'}
+        />
+        <button type="button" className="crm-button-secondary justify-center self-stretch" onClick={onImportCandidates}>
+          <FileUp size={16} />
+          Importar texto
+        </button>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="crm-section-title text-base">Prospectos encontrados</h3>
+        <span className="crm-badge">{candidates.length} en revisión</span>
+      </div>
+
+      <div className="grid gap-3">
+        {candidates.map((candidate) => (
+          <div key={candidate.id} className={`crm-mini-card rounded-2xl p-4 ${candidate.savedProspectId ? 'border-neon/50 bg-neon/5' : ''}`}>
+            <div className="grid gap-3 lg:grid-cols-[1.2fr_130px_1fr_1fr_1fr]">
+              <input className="crm-input" value={candidate.nombre} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { nombre: event.target.value })} placeholder="Nombre del negocio" />
+              <Select value={candidate.rubro} options={RUBROS} onChange={(value) => onUpdateCandidate(candidate.id, { rubro: value as Rubro, interes: inferInterestFromRubro(value as Rubro) })} />
+              <input className="crm-input" value={candidate.zona} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { zona: event.target.value })} placeholder="Zona" />
+              <input className="crm-input" value={candidate.telefono} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { telefono: event.target.value })} placeholder="Teléfono/WhatsApp" />
+              <Select value={candidate.interes} options={INTERESES} onChange={(value) => onUpdateCandidate(candidate.id, { interes: value as Interes })} />
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-[150px_1fr_1fr_1fr]">
+              <Select value={candidate.fuente} options={LEAD_SOURCES} onChange={(value) => onUpdateCandidate(candidate.id, { fuente: value as Origen })} />
+              <input className="crm-input" value={candidate.link} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { link: event.target.value })} placeholder="Link público" />
+              <input className="crm-input" value={candidate.redSocial} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { redSocial: event.target.value })} placeholder="Facebook / Instagram / TikTok" />
+              <input className="crm-input" value={candidate.nota} disabled={Boolean(candidate.savedProspectId)} onChange={(event) => onUpdateCandidate(candidate.id, { nota: event.target.value })} placeholder="Nota" />
+            </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="crm-muted text-xs">
+                {candidate.savedProspectId
+                  ? 'Guardado en CRM. Ya puedes preparar mensaje desde este prospecto.'
+                  : findDuplicateReason(candidate, prospects, candidates) || candidate.duplicateReason || 'Sin duplicados detectados'}
+              </p>
+              {candidate.savedProspectId ? (
+                <button type="button" className="crm-button-secondary justify-center" onClick={() => onPrepareSaved(candidate.savedProspectId || '')}>Preparar mensaje</button>
+              ) : (
+                <button type="button" className="crm-button-primary justify-center" onClick={() => onAddToCrm(candidate)}>Agregar al CRM</button>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
