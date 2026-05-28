@@ -72,6 +72,8 @@ type Prospect = WhatsAppProspectControl & {
 
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
 
+const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
+
 const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Ferretería', 'Tienda', 'Otro'];
 const INTERESES: Interes[] = ['RESTO', 'FERRO', 'Ambos'];
 const ESTADOS: Estado[] = ['Nuevo', 'Contactado', 'Interesado', 'Demo 30 días ofrecida', 'Demo activa', 'Reunión agendada', 'Cerrado', 'Perdido'];
@@ -221,6 +223,33 @@ function downloadCsv(prospects: Prospect[]) {
   URL.revokeObjectURL(url);
 }
 
+function downloadJsonBackup(prospects: Prospect[], exportedAt: string) {
+  const backup = {
+    app: 'FACTUSYS CRM',
+    version: 1,
+    exportedAt,
+    prospects,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `factusys-crm-backup-${exportedAt.slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseBackupJson(text: string): { exportedAt: string; prospects: Prospect[] } {
+  const parsed = JSON.parse(text);
+  const rawProspects = Array.isArray(parsed) ? parsed : parsed?.prospects;
+  if (!Array.isArray(rawProspects)) return { exportedAt: '', prospects: [] };
+
+  return {
+    exportedAt: typeof parsed?.exportedAt === 'string' ? parsed.exportedAt : '',
+    prospects: rawProspects.map((item) => normalizeProspect(item)).filter((item) => item.negocio && item.telefono),
+  };
+}
+
 function parseCsv(text: string): Prospect[] {
   const lines = text.split(/\r?\n/).filter(Boolean);
   const [headerLine, ...rows] = lines;
@@ -253,7 +282,11 @@ function CrmApp() {
   const [assistantIntent, setAssistantIntent] = useState<AssistantIntent>('Primer contacto');
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantCopied, setAssistantCopied] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState(() => (
+    typeof window === 'undefined' ? '' : window.localStorage.getItem(BACKUP_META_KEY) || ''
+  ));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -449,6 +482,36 @@ function CrmApp() {
     importProspectList(imported);
   };
 
+  const exportBackupJson = () => {
+    const exportedAt = new Date().toISOString();
+    downloadJsonBackup(prospects, exportedAt);
+    window.localStorage.setItem(BACKUP_META_KEY, exportedAt);
+    setLastBackupAt(exportedAt);
+  };
+
+  const restoreBackupJson = async (file: File) => {
+    try {
+      const backup = parseBackupJson(await file.text());
+      if (backup.prospects.length === 0) {
+        window.alert('El backup no tiene prospectos válidos.');
+        return;
+      }
+
+      if (!window.confirm(`Restaurar ${backup.prospects.length} prospectos y reemplazar los datos actuales?`)) return;
+
+      setProspects(backup.prospects);
+      await replaceStoredProspects(backup.prospects);
+      if (backup.exportedAt) {
+        window.localStorage.setItem(BACKUP_META_KEY, backup.exportedAt);
+        setLastBackupAt(backup.exportedAt);
+      }
+    } catch {
+      window.alert('No se pudo leer el backup JSON.');
+    } finally {
+      if (backupInputRef.current) backupInputRef.current.value = '';
+    }
+  };
+
   return (
     <main className="crm-page min-h-screen px-4 pb-16 pt-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -475,6 +538,21 @@ function CrmApp() {
           <MetricCard label="Demos ofrecidas" value={metrics.demosOfrecidas} />
           <MetricCard label="Demos activas" value={metrics.demosActivas} />
           <MetricCard label="Cerrados" value={metrics.cerrados} />
+        </section>
+
+        <section className="mb-6">
+          <BackupPanel
+            lastBackupAt={lastBackupAt}
+            onExport={exportBackupJson}
+            onRestore={() => backupInputRef.current?.click()}
+          />
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => event.target.files?.[0] && restoreBackupJson(event.target.files[0])}
+          />
         </section>
 
         <section className="mb-6">
@@ -534,6 +612,37 @@ function MetricCard({ label, value }: { label: string; value: number }) {
     <div className="crm-card p-4">
       <span className="crm-muted text-xs font-medium">{label}</span>
       <p className="crm-number mt-3">{value}</p>
+    </div>
+  );
+}
+
+function formatBackupDate(value: string) {
+  if (!value) return 'Sin backup registrado';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString('es-PE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function BackupPanel({ lastBackupAt, onExport, onRestore }: { lastBackupAt: string; onExport: () => void; onRestore: () => void }) {
+  return (
+    <div className="crm-card p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="crm-eyebrow mb-2">Backup del CRM</p>
+          <h2 className="crm-section-title">Exportar backup JSON completo</h2>
+          <p className="crm-muted mt-1 text-sm">Recomendación: haz un backup semanal antes de importar datos o hacer cambios grandes.</p>
+          <p className="crm-note mt-3 text-sm"><strong>Fecha de último backup:</strong> {formatBackupDate(lastBackupAt)}</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:min-w-[260px]">
+          <button type="button" onClick={onExport} className="crm-button-secondary justify-center"><Download size={16} />Exportar backup JSON</button>
+          <button type="button" onClick={onRestore} className="crm-button-primary justify-center"><FileUp size={16} />Restaurar datos</button>
+          <p className="crm-muted text-center text-xs">Importar backup JSON completo reemplaza los datos actuales.</p>
+        </div>
+      </div>
     </div>
   );
 }

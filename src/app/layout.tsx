@@ -1,14 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
 
 export const metadata: Metadata = {
   title: "FACTUSYS | Sistemas POS y ERP inteligentes para negocios en Perú",
@@ -32,7 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${inter.variable} theme-day h-full antialiased`}
+      className="theme-day h-full antialiased"
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans">
