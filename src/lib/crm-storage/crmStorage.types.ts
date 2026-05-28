@@ -6,6 +6,14 @@ export type CrmHistoryPayload = {
   respuestaCliente?: string;
   estadoConversacion?: string;
   historialMensajes?: unknown[];
+  installationStatus?: string;
+  installationDate?: string;
+  installationType?: string;
+  equipment?: unknown[];
+  sunatMode?: string;
+  nubefactConfigured?: boolean;
+  installationNotes?: string;
+  installationChecklist?: unknown;
 };
 
 export type CrmProspectRecord = {

@@ -38,6 +38,14 @@ function toSupabaseRow(prospect: CrmProspectRecord) {
     respuestaCliente: String(prospect.respuestaCliente || ''),
     estadoConversacion: String(prospect.estadoConversacion || 'Sin respuesta'),
     historialMensajes: Array.isArray(prospect.historialMensajes) ? prospect.historialMensajes : [],
+    installationStatus: String(prospect.installationStatus || ''),
+    installationDate: String(prospect.installationDate || ''),
+    installationType: String(prospect.installationType || ''),
+    equipment: Array.isArray(prospect.equipment) ? prospect.equipment : [],
+    sunatMode: String(prospect.sunatMode || ''),
+    nubefactConfigured: Boolean(prospect.nubefactConfigured),
+    installationNotes: String(prospect.installationNotes || ''),
+    installationChecklist: prospect.installationChecklist || {},
   };
 
   return {
@@ -84,6 +92,14 @@ function fromSupabaseRow<T extends CrmProspectRecord>(row: Record<string, unknow
     respuestaCliente: history.respuestaCliente || '',
     estadoConversacion: history.estadoConversacion || '',
     historialMensajes: history.historialMensajes || [],
+    installationStatus: String(history.installationStatus || ''),
+    installationDate: String(history.installationDate || ''),
+    installationType: String(history.installationType || ''),
+    equipment: Array.isArray(history.equipment) ? history.equipment : [],
+    sunatMode: String(history.sunatMode || ''),
+    nubefactConfigured: Boolean(history.nubefactConfigured),
+    installationNotes: String(history.installationNotes || ''),
+    installationChecklist: history.installationChecklist || {},
     createdAt: String(row.created_at || ''),
   };
 
