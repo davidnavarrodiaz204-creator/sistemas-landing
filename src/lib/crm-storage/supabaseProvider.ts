@@ -46,6 +46,7 @@ function toSupabaseRow(prospect: CrmProspectRecord) {
     nubefactConfigured: Boolean(prospect.nubefactConfigured),
     installationNotes: String(prospect.installationNotes || ''),
     installationChecklist: prospect.installationChecklist || {},
+    isDemo: Boolean(prospect.isDemo),
   };
 
   return {
@@ -100,6 +101,7 @@ function fromSupabaseRow<T extends CrmProspectRecord>(row: Record<string, unknow
     nubefactConfigured: Boolean(history.nubefactConfigured),
     installationNotes: String(history.installationNotes || ''),
     installationChecklist: history.installationChecklist || {},
+    isDemo: Boolean(history.isDemo),
     createdAt: String(row.created_at || ''),
   };
 

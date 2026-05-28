@@ -14,6 +14,7 @@ export type CrmHistoryPayload = {
   nubefactConfigured?: boolean;
   installationNotes?: string;
   installationChecklist?: unknown;
+  isDemo?: boolean;
 };
 
 export type CrmProspectRecord = {
@@ -33,6 +34,7 @@ export type CrmProspectRecord = {
   permisoContacto: string;
   ultimoMensajeEnviado: string;
   createdAt: string;
+  isDemo?: boolean;
   [key: string]: unknown;
 };
 

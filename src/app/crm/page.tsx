@@ -69,11 +69,13 @@ type Prospect = WhatsAppProspectControl & {
   nota: string;
   origen: Origen;
   createdAt: string;
+  isDemo?: boolean;
 };
 
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
 
@@ -129,6 +131,7 @@ const DEMO_PROSPECTS: Prospect[] = [
     nota: 'Le interesa probar mesas, cocina y cierre de caja con impresora térmica.',
     origen: 'Facebook',
     createdAt: new Date().toISOString(),
+    isDemo: true,
   },
   {
     ...DEFAULT_WHATSAPP_CONTROL,
@@ -146,6 +149,7 @@ const DEMO_PROSPECTS: Prospect[] = [
     nota: 'Quiere ver reportes y comandas antes de activar demo.',
     origen: 'Google Maps',
     createdAt: new Date().toISOString(),
+    isDemo: true,
   },
   {
     ...DEFAULT_WHATSAPP_CONTROL,
@@ -163,8 +167,13 @@ const DEMO_PROSPECTS: Prospect[] = [
     nota: 'Problemas con stock, ventas fiadas y cotizaciones manuales.',
     origen: 'Visita directa',
     createdAt: new Date().toISOString(),
+    isDemo: true,
   },
 ];
+
+function isDemoRecord(raw: Partial<Prospect>) {
+  return Boolean(raw.isDemo) || String(raw.id || '').startsWith('demo-') || String(raw.redSocial || '').includes('-demo');
+}
 
 function normalizeProspect(raw: Partial<Prospect>): Prospect {
   const cantidadMensajesEnviados = Number(raw.cantidadMensajesEnviados || 0);
@@ -191,6 +200,7 @@ function normalizeProspect(raw: Partial<Prospect>): Prospect {
     estadoConversacion: ESTADOS_CONVERSACION.includes(raw.estadoConversacion as ConversationStatus) ? raw.estadoConversacion as ConversationStatus : 'Sin respuesta',
     historialMensajes: Array.isArray(raw.historialMensajes) ? raw.historialMensajes : [],
     createdAt: raw.createdAt || new Date().toISOString(),
+    isDemo: isDemoRecord(raw),
   };
 }
 
@@ -274,7 +284,7 @@ export default function CrmPage() {
 }
 
 function CrmApp() {
-  const [prospects, setProspects] = useState<Prospect[]>(DEMO_PROSPECTS);
+  const [prospects, setProspects] = useState<Prospect[]>([]);
   const [form, setForm] = useState<ProspectForm>(EMPTY_FORM);
   const [search, setSearch] = useState('');
   const [rubroFilter, setRubroFilter] = useState('Todos');
@@ -297,8 +307,12 @@ function CrmApp() {
   useEffect(() => {
     let active = true;
 
-    getStoredProspects(DEMO_PROSPECTS, normalizeProspect).then((storedProspects) => {
-      if (active) setProspects(storedProspects);
+    getStoredProspects([], normalizeProspect).then((storedProspects) => {
+      const safeProspects = IS_PRODUCTION ? storedProspects.filter((item) => !item.isDemo) : storedProspects;
+      if (IS_PRODUCTION && safeProspects.length !== storedProspects.length) {
+        void replaceStoredProspects(safeProspects);
+      }
+      if (active) setProspects(safeProspects);
     });
 
     return () => {
@@ -349,7 +363,7 @@ function CrmApp() {
   const addProspect = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.negocio.trim() || !form.contacto.trim() || !form.telefono.trim()) return;
-    const prospect = { ...form, id: `prospect-${Date.now().toString(36)}`, createdAt: new Date().toISOString() };
+    const prospect = { ...form, id: `prospect-${Date.now().toString(36)}`, createdAt: new Date().toISOString(), isDemo: false };
     setProspects([prospect, ...prospects]);
     void saveStoredProspect(prospect, prospects);
     setForm(EMPTY_FORM);
@@ -396,8 +410,37 @@ function CrmApp() {
     void replaceStoredProspects([]);
   };
 
-  const clearDemo = () => {
-    if (!window.confirm('¿Limpiar todos los datos del CRM?')) return;
+  const loadDemoProspects = () => {
+    if (!window.confirm('Esto agregará prospectos de ejemplo. ¿Deseas continuar?')) return;
+    const existingIds = new Set(prospects.map((item) => item.id));
+    const nextDemo = DEMO_PROSPECTS
+      .filter((item) => !existingIds.has(item.id))
+      .map((item) => ({ ...item, createdAt: new Date().toISOString(), isDemo: true }));
+
+    if (nextDemo.length === 0) {
+      window.alert('Los datos demo ya están cargados.');
+      return;
+    }
+
+    const next = [...nextDemo, ...prospects];
+    setProspects(next);
+    void replaceStoredProspects(next);
+  };
+
+  const removeDemoProspects = () => {
+    const next = prospects.filter((item) => !item.isDemo);
+    if (next.length === prospects.length) {
+      window.alert('No hay datos demo para eliminar.');
+      return;
+    }
+    if (!window.confirm('Esto eliminará solo los prospectos marcados como demo. ¿Deseas continuar?')) return;
+    setProspects(next);
+    void replaceStoredProspects(next);
+  };
+
+  const clearCrm = () => {
+    if (!window.confirm('Esto eliminará todos los prospectos e instalaciones guardadas en este navegador.')) return;
+    if (!window.confirm('Confirmación final: se vaciará el CRM completo en este navegador. ¿Deseas continuar?')) return;
     clearProspects();
   };
 
@@ -556,7 +599,9 @@ function CrmApp() {
             <a href="/crm/installations" className="crm-button-secondary justify-center">Instalaciones</a>
             <button type="button" onClick={() => downloadCsv(filteredProspects)} className="crm-button-secondary"><Download size={16} />Exportar CSV</button>
             <button type="button" onClick={() => fileInputRef.current?.click()} className="crm-button-secondary"><FileUp size={16} />Importar CSV</button>
-            <button type="button" onClick={clearDemo} className="crm-button-danger"><RotateCcw size={16} />Limpiar datos</button>
+            {!IS_PRODUCTION && <button type="button" onClick={loadDemoProspects} className="crm-button-secondary"><Plus size={16} />Cargar demo CRM</button>}
+            <button type="button" onClick={removeDemoProspects} className="crm-button-secondary"><RotateCcw size={16} />Eliminar datos demo</button>
+            <button type="button" onClick={clearCrm} className="crm-button-danger"><Trash2 size={16} />Vaciar CRM</button>
             <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => event.target.files?.[0] && importCsv(event.target.files[0])} />
           </div>
         </header>
@@ -931,12 +976,12 @@ function Filters(props: { search: string; setSearch: (v: string) => void; rubroF
 function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete, ...actions }: { prospects: Prospect[]; copiedId: string | null; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
   return (
     <div className="space-y-3">
-      {prospects.length === 0 && <div className="crm-card p-10 text-center"><Users className="mx-auto mb-3 text-neon" /><h3 className="crm-section-title">Sin prospectos</h3><p className="crm-muted mt-1 text-sm">Agrega un negocio o cambia los filtros.</p></div>}
+      {prospects.length === 0 && <div className="crm-card p-10 text-center"><Users className="mx-auto mb-3 text-neon" /><h3 className="crm-section-title">No tienes prospectos todavía</h3><p className="crm-muted mx-auto mt-1 max-w-md text-sm">Agrega tu primer negocio para empezar a vender FACTUSYS.</p></div>}
       {prospects.map((prospect) => (
         <article key={prospect.id} className="crm-card p-4 sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2"><h3 className="crm-prospect-title">{prospect.negocio}</h3><span className="crm-badge">{prospect.rubro}</span><span className={`crm-interest crm-interest-${prospect.interes.toLowerCase()}`}>{prospect.interes}</span></div>
+              <div className="mb-2 flex flex-wrap items-center gap-2"><h3 className="crm-prospect-title">{prospect.negocio}</h3><span className="crm-badge">{prospect.rubro}</span><span className={`crm-interest crm-interest-${prospect.interes.toLowerCase()}`}>{prospect.interes}</span>{prospect.isDemo && <span className="crm-badge">Demo</span>}</div>
               <div className="crm-muted grid gap-1 text-sm sm:grid-cols-2">
                 <p><strong>Contacto:</strong> {prospect.contacto}</p><p><strong>WhatsApp:</strong> {prospect.telefono}</p>
                 <p><strong>Zona:</strong> {prospect.zona || 'Sin zona'}</p><p><strong>Origen:</strong> {prospect.origen}</p>

@@ -9,6 +9,8 @@ import {
 import type { CrmProspectRecord } from '@/lib/crm-storage/crmStorage.types';
 import { CalendarCheck, CheckCircle2, ClipboardCheck, Laptop, Printer, Tablet, Wrench } from 'lucide-react';
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 type InstallationStatus = 'Prospecto' | 'Demo agendada' | 'Demo activa' | 'Instalación parcial' | 'Producción' | 'Soporte';
 type InstallationType = 'FERRO' | 'RESTO';
 type Equipment = 'impresora' | 'laptop' | 'tablet';
@@ -69,6 +71,7 @@ const DEMO_CLIENTS: InstallationClient[] = [
     nubefactConfigured: false,
     installationNotes: 'Validar impresora y flujo de cocina.',
     installationChecklist: { ...emptyChecklist(), Caja: true, WhatsApp: true },
+    isDemo: true,
   },
   {
     id: 'installation-demo-ferro',
@@ -95,8 +98,15 @@ const DEMO_CLIENTS: InstallationClient[] = [
     nubefactConfigured: false,
     installationNotes: 'Coordinar prueba con inventario real.',
     installationChecklist: emptyChecklist(),
+    isDemo: true,
   },
 ];
+
+const DEMO_CLIENT_IDS = new Set(DEMO_CLIENTS.map((client) => client.id));
+
+function isDemoClient(raw: Partial<InstallationClient>) {
+  return Boolean(raw.isDemo) || DEMO_CLIENT_IDS.has(String(raw.id || '')) || String(raw.id || '').startsWith('installation-demo-') || String(raw.redSocial || '').includes('-demo');
+}
 
 function normalizeClient(raw: Partial<InstallationClient>): InstallationClient {
   const baseChecklist = emptyChecklist();
@@ -128,6 +138,7 @@ function normalizeClient(raw: Partial<InstallationClient>): InstallationClient {
     nubefactConfigured: Boolean(raw.nubefactConfigured),
     installationNotes: raw.installationNotes || '',
     installationChecklist: CHECKLIST_OPTIONS.reduce((acc, key) => ({ ...acc, [key]: Boolean((rawChecklist as Record<string, unknown>)[key] ?? baseChecklist[key]) }), baseChecklist),
+    isDemo: isDemoClient(raw),
   };
 }
 
@@ -140,14 +151,16 @@ export default function InstallationsPage() {
 }
 
 function InstallationsApp() {
-  const [clients, setClients] = useState<InstallationClient[]>(DEMO_CLIENTS);
+  const [clients, setClients] = useState<InstallationClient[]>([]);
   const [activeStatus, setActiveStatus] = useState<InstallationStatus | 'Todos'>('Todos');
 
   useEffect(() => {
     let active = true;
 
-    getStoredProspects(DEMO_CLIENTS, normalizeClient).then((items) => {
-      if (active) setClients(items.map(normalizeClient));
+    getStoredProspects([], normalizeClient).then((items) => {
+      const normalized = items.map(normalizeClient);
+      const safeClients = IS_PRODUCTION ? normalized.filter((item) => !item.isDemo) : normalized;
+      if (active) setClients(safeClients);
     });
 
     return () => {
@@ -247,6 +260,13 @@ function InstallationsApp() {
         </section>
 
         <section className="grid gap-5">
+          {filteredClients.length === 0 && (
+            <div className="crm-card p-10 text-center">
+              <Wrench className="mx-auto mb-3 text-neon" size={30} />
+              <h2 className="crm-section-title">No tienes instalaciones todavía</h2>
+              <p className="crm-muted mx-auto mt-2 max-w-md text-sm">Cuando tengas un cliente real o una demo agendada, aparecerá aquí para controlar checklist, equipos y SUNAT.</p>
+            </div>
+          )}
           {filteredClients.map((client) => (
             <InstallationCard
               key={client.id}
