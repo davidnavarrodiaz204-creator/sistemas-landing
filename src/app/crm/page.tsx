@@ -45,6 +45,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  Wifi,
   X,
 } from 'lucide-react';
 
@@ -73,6 +74,8 @@ type Prospect = WhatsAppProspectControl & {
 type ProspectForm = Omit<Prospect, 'id' | 'createdAt'>;
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
+
+type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
 
 const RUBROS: Rubro[] = ['Restaurante', 'Pollería', 'Ferretería', 'Tienda', 'Otro'];
 const INTERESES: Interes[] = ['RESTO', 'FERRO', 'Ambos'];
@@ -285,6 +288,9 @@ function CrmApp() {
   const [lastBackupAt, setLastBackupAt] = useState(() => (
     typeof window === 'undefined' ? '' : window.localStorage.getItem(BACKUP_META_KEY) || ''
   ));
+  const [openWaStatus, setOpenWaStatus] = useState<OpenWaStatus>('idle');
+  const [openWaMessage, setOpenWaMessage] = useState('Modo simulacion hasta probar conexion.');
+  const [testingOpenWa, setTestingOpenWa] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -475,6 +481,29 @@ function CrmApp() {
     window.open(`https://wa.me/${normalizePhone(assistantProspect.telefono)}?text=${encodeURIComponent(assistantDraft)}`, '_blank', 'noopener,noreferrer');
   };
 
+  const testOpenWaConnection = async () => {
+    setTestingOpenWa(true);
+    try {
+      const response = await fetch('/api/whatsapp/send', { method: 'GET', cache: 'no-store' });
+      const data = await response.json();
+      if (data.status === 'connected') {
+        setOpenWaStatus('connected');
+      } else if (data.status === 'not_configured') {
+        setOpenWaStatus('not_configured');
+      } else if (data.mode === 'simulation') {
+        setOpenWaStatus('simulation');
+      } else {
+        setOpenWaStatus('error');
+      }
+      setOpenWaMessage(data.message || 'Estado OpenWA actualizado.');
+    } catch {
+      setOpenWaStatus('error');
+      setOpenWaMessage('No se pudo probar la conexion OpenWA.');
+    } finally {
+      setTestingOpenWa(false);
+    }
+  };
+
   const importCsv = async (file: File) => {
     const text = await file.text();
     const imported = parseCsv(text);
@@ -558,6 +587,15 @@ function CrmApp() {
 
         <section className="mb-6">
           <WhatsAppLimitPanel sent={whatsappLimit.sent} remaining={whatsappLimit.remaining} limit={whatsappLimit.limit} />
+        </section>
+
+        <section className="mb-6">
+          <OpenWaStatusPanel
+            status={openWaStatus}
+            message={openWaMessage}
+            testing={testingOpenWa}
+            onTest={testOpenWaConnection}
+          />
         </section>
 
         <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -671,6 +709,49 @@ function WhatsAppLimitPanel({ sent, remaining, limit }: { sent: number; remainin
         </div>
       </div>
       {blocked && <p className="crm-note mt-4 text-sm">Límite diario alcanzado. El botón “Marcar como enviado” queda bloqueado hasta mañana.</p>}
+    </div>
+  );
+}
+
+function OpenWaStatusPanel({
+  status,
+  message,
+  testing,
+  onTest,
+}: {
+  status: OpenWaStatus;
+  message: string;
+  testing: boolean;
+  onTest: () => void;
+}) {
+  const labelByStatus: Record<OpenWaStatus, string> = {
+    idle: 'Modo simulacion',
+    connected: 'Conectado',
+    not_configured: 'No configurado',
+    error: 'Error',
+    simulation: 'Modo simulacion',
+  };
+
+  const statusClass = status === 'connected'
+    ? 'text-neon'
+    : status === 'error'
+      ? 'text-red-500'
+      : 'text-yellow-500';
+
+  return (
+    <div className="crm-card p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="crm-eyebrow mb-2">Estado OpenWA</p>
+          <h2 className="crm-section-title">Bridge WhatsApp controlado</h2>
+          <p className="crm-muted mt-1 text-sm">El CRM no envía automático. El bridge solo se usa después de confirmación manual y con límite diario.</p>
+          <p className="crm-note mt-3 text-sm"><strong className={statusClass}>{labelByStatus[status]}</strong> · {message}</p>
+        </div>
+        <button type="button" onClick={onTest} disabled={testing} className="crm-button-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">
+          <Wifi size={16} />
+          {testing ? 'Probando...' : 'Probar conexión'}
+        </button>
+      </div>
     </div>
   );
 }
