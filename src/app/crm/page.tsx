@@ -1013,6 +1013,7 @@ function CrmApp() {
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
+            <a href="/crm/executive" className="crm-button-primary justify-center">Dashboard Ejecutivo</a>
             <a href="/crm/installations" className="crm-button-secondary justify-center">Instalaciones</a>
             <button type="button" onClick={() => downloadCsv(filteredProspects)} className="crm-button-secondary"><Download size={16} />Exportar CSV</button>
             <button type="button" onClick={() => fileInputRef.current?.click()} className="crm-button-secondary"><FileUp size={16} />Importar CSV</button>
