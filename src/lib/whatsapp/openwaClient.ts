@@ -2,6 +2,7 @@ type SendOpenWaMessageInput = {
   phone: string;
   message: string;
   prospectId: string;
+  mediaUrl?: string;
 };
 
 export function normalizePeruPhone(phone: string) {
@@ -76,7 +77,7 @@ export async function checkOpenWaHealth() {
   }
 }
 
-export async function sendOpenWaMessage({ phone, message, prospectId }: SendOpenWaMessageInput) {
+export async function sendOpenWaMessage({ phone, message, prospectId, mediaUrl }: SendOpenWaMessageInput) {
   const normalizedPhone = normalizePeruPhone(phone);
 
   if (!isOpenWaConfigured()) {
@@ -86,20 +87,30 @@ export async function sendOpenWaMessage({ phone, message, prospectId }: SendOpen
       provider: 'openwa',
       prospectId,
       phone: normalizedPhone,
+      mediaUrl: mediaUrl || '',
       message: 'OpenWA no configurado. Respuesta simulada, no se envio mensaje real.',
     };
   }
 
   const { apiUrl } = getOpenWaConfig();
+  const endpoint = mediaUrl ? 'sendImage' : 'sendText';
+  const args = mediaUrl
+    ? {
+        to: `${normalizedPhone}@c.us`,
+        file: mediaUrl,
+        filename: mediaUrl.split('/').pop() || 'factusys-demo.jpg',
+        caption: message,
+      }
+    : {
+        to: `${normalizedPhone}@c.us`,
+        content: message,
+      };
 
-  const response = await fetch(`${apiUrl.replace(/\/$/, '')}/sendText`, {
+  const response = await fetch(`${apiUrl.replace(/\/$/, '')}/${endpoint}`, {
     method: 'POST',
     headers: openWaHeaders(),
     body: JSON.stringify({
-      args: {
-        to: `${normalizedPhone}@c.us`,
-        content: message,
-      },
+      args,
       prospectId,
     }),
   });
@@ -111,6 +122,7 @@ export async function sendOpenWaMessage({ phone, message, prospectId }: SendOpen
       provider: 'openwa',
       prospectId,
       phone: normalizedPhone,
+      mediaUrl: mediaUrl || '',
       message: `OpenWA respondio con estado ${response.status}.`,
     };
   }
@@ -121,6 +133,7 @@ export async function sendOpenWaMessage({ phone, message, prospectId }: SendOpen
     provider: 'openwa',
     prospectId,
     phone: normalizedPhone,
+    mediaUrl: mediaUrl || '',
     response: await response.json().catch(() => ({})),
   };
 }

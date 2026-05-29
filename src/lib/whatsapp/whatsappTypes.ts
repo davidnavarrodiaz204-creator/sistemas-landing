@@ -14,6 +14,8 @@ export type WhatsAppMessageStatus =
   | 'copied'
   | 'opened_whatsapp'
   | 'sent_marked'
+  | 'openwa_sent'
+  | 'openwa_simulated'
   | 'answered'
   | 'blocked'
   | 'ai_saved';
@@ -26,6 +28,7 @@ export type WhatsAppMessageLog = {
   message: string;
   status: WhatsAppMessageStatus;
   createdAt: string;
+  mediaUrl?: string;
 };
 
 export type WhatsAppProspectControl = {

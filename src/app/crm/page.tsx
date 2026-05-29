@@ -100,6 +100,7 @@ type SalesDailyLog = {
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
 const SALES_DAILY_LOG_KEY = 'factusys_crm_sales_daily_log_v1';
+const LEAD_CANDIDATES_KEY = 'factusys_crm_lead_candidates_v1';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
@@ -155,6 +156,21 @@ function loadSalesDailyLogs(): SalesDailyLog[] {
 function saveSalesDailyLogs(logs: SalesDailyLog[]) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(SALES_DAILY_LOG_KEY, JSON.stringify(logs.slice(0, 30)));
+}
+
+function loadLeadCandidates(): LeadCandidate[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LEAD_CANDIDATES_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLeadCandidates(candidates: LeadCandidate[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(LEAD_CANDIDATES_KEY, JSON.stringify(candidates.slice(0, 200)));
 }
 
 const DEMO_PROSPECTS: Prospect[] = [
@@ -351,6 +367,31 @@ function downloadCsv(prospects: Prospect[]) {
   URL.revokeObjectURL(url);
 }
 
+function downloadLeadCandidatesCsv(candidates: LeadCandidate[]) {
+  const headers = ['nombre', 'rubro', 'zona', 'telefono', 'fuente', 'link', 'redSocial', 'contacto', 'interes', 'nota', 'guardado'];
+  const rows = candidates.map((item) => [
+    item.nombre,
+    item.rubro,
+    item.zona,
+    item.telefono,
+    item.fuente,
+    item.link,
+    item.redSocial,
+    item.contacto,
+    item.interes,
+    item.nota,
+    item.savedProspectId ? 'SI' : 'NO',
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(toCsvValue).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `factusys-prospectos-encontrados-${today()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function downloadJsonBackup(prospects: Prospect[], exportedAt: string) {
   const backup = {
     app: 'FACTUSYS CRM',
@@ -409,7 +450,8 @@ function CrmApp() {
   const [leadZona, setLeadZona] = useState('Paita');
   const [leadFuente, setLeadFuente] = useState<Origen>('Google Maps');
   const [leadImportText, setLeadImportText] = useState('');
-  const [leadCandidates, setLeadCandidates] = useState<LeadCandidate[]>([]);
+  const [leadCandidates, setLeadCandidates] = useState<LeadCandidate[]>(() => loadLeadCandidates());
+  const [whatsAppMediaUrl, setWhatsAppMediaUrl] = useState('');
   const [dailyLogs, setDailyLogs] = useState<SalesDailyLog[]>(() => loadSalesDailyLogs());
   const [workdayStarted, setWorkdayStarted] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -441,6 +483,10 @@ function CrmApp() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    saveLeadCandidates(leadCandidates);
+  }, [leadCandidates]);
 
   const filteredProspects = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -598,7 +644,7 @@ function CrmApp() {
     void updateStoredProspect(id, patch, prospects);
   };
 
-  const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}, messageOverride?: string) => {
+  const logWhatsAppAction = (prospect: Prospect, status: WhatsAppMessageLog['status'], patch: Partial<Prospect> = {}, messageOverride?: string, mediaUrl?: string) => {
     const message = messageOverride || getMessage(prospect.interes);
     const entry: WhatsAppMessageLog = {
       id: `wa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -608,6 +654,7 @@ function CrmApp() {
       message,
       status,
       createdAt: new Date().toISOString(),
+      mediaUrl,
     };
 
     const patchWithHistory = {
@@ -721,6 +768,49 @@ function CrmApp() {
       cantidadMensajesEnviados: prospect.cantidadMensajesEnviados + 1,
       estadoConversacion: 'Sin respuesta',
     });
+  };
+
+  const sendOpenWa = async (prospect: Prospect) => {
+    const blockReason = getSendBlockReason(prospects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
+    if (blockReason) return;
+    const mediaUrl = whatsAppMediaUrl.trim();
+    if (mediaUrl && !/^https?:\/\//.test(mediaUrl)) {
+      window.alert('La imagen demo debe ser un enlace público http/https.');
+      return;
+    }
+    if (!window.confirm(`Confirmar envío manual por OpenWA a ${prospect.negocio}.`)) return;
+
+    try {
+      const message = getMessage(prospect.interes);
+      const response = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: prospect.telefono,
+          message,
+          prospectId: prospect.id,
+          permissionContact: prospect.permisoContacto,
+          sentToday: whatsappLimit.sent,
+          confirmSend: true,
+          mediaUrl,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        window.alert(data.message || 'No se pudo enviar por OpenWA.');
+        return;
+      }
+      logWhatsAppAction(prospect, data.simulated ? 'openwa_simulated' : 'openwa_sent', {
+        estado: prospect.estado === 'Nuevo' ? 'Contactado' : prospect.estado,
+        fechaUltimoContacto: today(),
+        fechaUltimoMensaje: todayKey(),
+        cantidadMensajesEnviados: prospect.cantidadMensajesEnviados + 1,
+        estadoConversacion: 'Sin respuesta',
+      }, message, mediaUrl);
+      window.alert(data.simulated ? 'Modo simulación: mensaje registrado sin envío real.' : 'Mensaje enviado por OpenWA.');
+    } catch {
+      window.alert('No se pudo conectar con la ruta OpenWA.');
+    }
   };
 
   const markAnswered = (prospect: Prospect) => {
@@ -895,6 +985,10 @@ function CrmApp() {
         </section>
 
         <section className="mb-6">
+          <WhatsAppMediaPanel mediaUrl={whatsAppMediaUrl} onChange={setWhatsAppMediaUrl} />
+        </section>
+
+        <section className="mb-6">
           <OpenWaStatusPanel
             status={openWaStatus}
             message={openWaMessage}
@@ -917,6 +1011,7 @@ function CrmApp() {
             onImportTextChange={setLeadImportText}
             onCreateCandidate={createLeadCandidate}
             onImportCandidates={importLeadCandidates}
+            onExportCandidates={() => downloadLeadCandidatesCsv(leadCandidates)}
             onUpdateCandidate={updateLeadCandidate}
             onAddToCrm={addLeadToCrm}
             onPrepareSaved={(prospectId) => {
@@ -928,11 +1023,11 @@ function CrmApp() {
 
         <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
           <OfferCard />
-          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+          <TodayList prospects={contactToday} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
         </section>
 
         <section className="mb-6">
-          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+          <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
         </section>
 
         <section className="mb-6">
@@ -952,7 +1047,7 @@ function CrmApp() {
               interesFilter={interesFilter}
               setInteresFilter={setInteresFilter}
             />
-            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={deleteProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={deleteProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
           </div>
         </section>
       </div>
@@ -1153,6 +1248,26 @@ function WhatsAppLimitPanel({ sent, remaining, limit }: { sent: number; remainin
   );
 }
 
+function WhatsAppMediaPanel({ mediaUrl, onChange }: { mediaUrl: string; onChange: (value: string) => void }) {
+  return (
+    <div className="crm-card p-5">
+      <div className="grid gap-4 lg:grid-cols-[1fr_420px] lg:items-end">
+        <div>
+          <p className="crm-eyebrow mb-2">Imagen demo para WhatsApp</p>
+          <h2 className="crm-section-title">Enviar texto + imagen con OpenWA</h2>
+          <p className="crm-muted mt-1 text-sm">Pega un enlace público de una captura o imagen demo. Solo se usará cuando confirmes “Enviar OpenWA”.</p>
+        </div>
+        <input
+          className="crm-input"
+          value={mediaUrl}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="https://.../demo-factusys.jpg"
+        />
+      </div>
+    </div>
+  );
+}
+
 function OpenWaStatusPanel({
   status,
   message,
@@ -1209,6 +1324,7 @@ function LeadProspectingPanel({
   onImportTextChange,
   onCreateCandidate,
   onImportCandidates,
+  onExportCandidates,
   onUpdateCandidate,
   onAddToCrm,
   onPrepareSaved,
@@ -1225,6 +1341,7 @@ function LeadProspectingPanel({
   onImportTextChange: (value: string) => void;
   onCreateCandidate: () => void;
   onImportCandidates: () => void;
+  onExportCandidates: () => void;
   onUpdateCandidate: (id: string, patch: Partial<LeadCandidate>) => void;
   onAddToCrm: (candidate: LeadCandidate) => void;
   onPrepareSaved: (prospectId: string) => void;
@@ -1278,7 +1395,13 @@ function LeadProspectingPanel({
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="crm-section-title text-base">Prospectos encontrados</h3>
-        <span className="crm-badge">{candidates.length} en revisión</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="crm-badge">{candidates.length} en revisión</span>
+          <button type="button" className="crm-button-secondary min-h-0 px-3 py-2 text-xs" onClick={onExportCandidates}>
+            <Download size={14} />
+            Exportar Excel/CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3">
@@ -1386,6 +1509,7 @@ type WhatsAppActions = {
   allProspects: Prospect[];
   onPrepare: (p: Prospect) => void;
   onOpenWhatsApp: (p: Prospect) => void;
+  onSendOpenWa: (p: Prospect) => void;
   onMarkSent: (p: Prospect) => void;
   onMarkAnswered: (p: Prospect) => void;
   onNoContact: (p: Prospect) => void;
@@ -1523,7 +1647,7 @@ function ProspectList({ prospects, copiedId, onCopy, onUpdate, onDelete, ...acti
   );
 }
 
-function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
+function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspects, onPrepare, onOpenWhatsApp, onSendOpenWa, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; compact?: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void } & WhatsAppActions) {
   const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
 
   return (
@@ -1536,7 +1660,7 @@ function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspec
         <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onPrepare(prospect)}>Preparar</button>
         <button type="button" className="crm-button-secondary min-h-0 flex-1 justify-center px-3 py-2 text-xs" onClick={() => onCopy(prospect)}>{copied ? 'Copiado' : 'Copiar'}</button>
         <button type="button" className="crm-button-primary min-h-0 justify-center px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(blockReason)} title={blockReason || 'Abrir WhatsApp'} onClick={() => onOpenWhatsApp(prospect)}><MessageCircle size={13} />WA</button>
-        <button type="button" className="crm-button-secondary min-h-0 justify-center px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(blockReason)} title={blockReason || 'Marcar mensaje como enviado'} onClick={() => onMarkSent(prospect)}>Enviado</button>
+        <button type="button" className="crm-button-secondary min-h-0 justify-center px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(blockReason)} title={blockReason || 'Enviar con OpenWA'} onClick={() => onSendOpenWa(prospect)}>OpenWA</button>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <button type="button" className="crm-button-ghost min-h-0 justify-center px-3 py-2 text-xs" onClick={() => onMarkAnswered(prospect)}>Respondió</button>
@@ -1549,7 +1673,7 @@ function QuickProspect({ prospect, copied, compact, onCopy, onUpdate, allProspec
   );
 }
 
-function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspects, onPrepare, onOpenWhatsApp, onMarkSent, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
+function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspects, onPrepare, onOpenWhatsApp, onSendOpenWa, onMarkSent, onMarkAnswered, onNoContact, onOpenAssistant }: { prospect: Prospect; copied: boolean; onCopy: (p: Prospect) => void; onUpdate: (id: string, patch: Partial<Prospect>) => void; onDelete: (id: string) => void } & WhatsAppActions) {
   const blockReason = getSendBlockReason(allProspects, prospect, DEFAULT_DAILY_WHATSAPP_LIMIT);
 
   return (
@@ -1557,6 +1681,7 @@ function ActionButtons({ prospect, copied, onCopy, onUpdate, onDelete, allProspe
       <button type="button" onClick={() => onPrepare(prospect)} className="crm-button-ghost justify-center">Preparar mensaje</button>
       <button type="button" onClick={() => onCopy(prospect)} className="crm-button-secondary justify-center"><Clipboard size={15} />{copied ? 'Copiado' : 'Copiar'}</button>
       <button type="button" onClick={() => onOpenWhatsApp(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Abrir WhatsApp'} className="crm-button-primary justify-center disabled:cursor-not-allowed disabled:opacity-50"><MessageCircle size={15} />Abrir WhatsApp</button>
+      <button type="button" onClick={() => onSendOpenWa(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Enviar por OpenWA'} className="crm-button-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">Enviar OpenWA</button>
       <button type="button" onClick={() => onMarkSent(prospect)} disabled={Boolean(blockReason)} title={blockReason || 'Marcar como enviado'} className="crm-button-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">Marcar enviado</button>
       <button type="button" onClick={() => onMarkAnswered(prospect)} className="crm-button-secondary justify-center">Marcar respondió</button>
       <button type="button" onClick={() => onNoContact(prospect)} className="crm-button-ghost justify-center">No contactar</button>

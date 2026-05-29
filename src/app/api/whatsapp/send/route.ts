@@ -9,6 +9,7 @@ type SendRequestBody = {
   permissionContact?: string;
   sentToday?: number;
   confirmSend?: boolean;
+  mediaUrl?: string;
 };
 
 const dailySendCounter = new Map<string, number>();
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   const phone = normalizePeruPhone(body.phone || '');
   const message = (body.message || '').trim();
   const prospectId = (body.prospectId || '').trim();
+  const mediaUrl = (body.mediaUrl || '').trim();
   const sentToday = Math.max(Number(body.sentToday || 0), currentServerCount());
 
   if (!phone || !message || !prospectId) {
@@ -64,7 +66,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: 'Limite diario de WhatsApp alcanzado.' }, { status: 429 });
   }
 
-  const result = await sendOpenWaMessage({ phone, message, prospectId });
+  if (mediaUrl && !/^https?:\/\//.test(mediaUrl)) {
+    return NextResponse.json({ ok: false, message: 'mediaUrl debe ser un enlace publico http/https.' }, { status: 400 });
+  }
+
+  const result = await sendOpenWaMessage({ phone, message, prospectId, mediaUrl });
 
   if (result.ok) incrementServerCount();
 
@@ -79,6 +85,7 @@ export async function POST(request: Request) {
       prospectId,
       phone,
       message,
+      mediaUrl,
       status: result.simulated ? 'openwa_simulated' : 'openwa_sent',
       createdAt: new Date().toISOString(),
     },
