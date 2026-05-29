@@ -97,10 +97,20 @@ type SalesDailyLog = {
   nextFollowUps: number;
   notes: string;
 };
+type SearchPlatform = 'Google Maps' | 'Facebook' | 'Instagram' | 'TikTok' | 'Google normal';
+type ProspectSearchRecord = {
+  id: string;
+  query: string;
+  rubro: Rubro;
+  ciudad: string;
+  platform: SearchPlatform;
+  createdAt: string;
+};
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
 const SALES_DAILY_LOG_KEY = 'factusys_crm_sales_daily_log_v1';
 const LEAD_CANDIDATES_KEY = 'factusys_crm_lead_candidates_v1';
+const PROSPECT_SEARCH_HISTORY_KEY = 'factusys_crm_prospect_search_history_v1';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 type OpenWaStatus = 'idle' | 'connected' | 'not_configured' | 'error' | 'simulation';
@@ -114,6 +124,8 @@ const ESTADOS_CONVERSACION: ConversationStatus[] = ['Sin respuesta', 'Respondió
 
 const LEAD_SEARCH_RUBROS: Rubro[] = ['Pollería', 'Restaurante', 'Cevichería', 'Ferretería', 'Minimarket', 'Otro'];
 const LEAD_SOURCES: Origen[] = ['Google Maps', 'Facebook', 'TikTok', 'Instagram', 'Referido', 'Manual'];
+
+const SEARCH_PLATFORMS: SearchPlatform[] = ['Google Maps', 'Facebook', 'Instagram', 'TikTok', 'Google normal'];
 
 const DEFAULT_WHATSAPP_CONTROL: WhatsAppProspectControl = {
   permisoContacto: 'Pendiente',
@@ -171,6 +183,21 @@ function loadLeadCandidates(): LeadCandidate[] {
 function saveLeadCandidates(candidates: LeadCandidate[]) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(LEAD_CANDIDATES_KEY, JSON.stringify(candidates.slice(0, 200)));
+}
+
+function loadProspectSearchHistory(): ProspectSearchRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PROSPECT_SEARCH_HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProspectSearchHistory(history: ProspectSearchRecord[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PROSPECT_SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
 }
 
 const DEMO_PROSPECTS: Prospect[] = [
@@ -302,6 +329,27 @@ function buildPublicSearchUrl(source: Origen | 'maps' | 'facebook' | 'instagram'
   };
 
   return urls[source];
+}
+
+function buildProspectSearchQuery(rubro: string, ciudad: string, platform: SearchPlatform) {
+  const base = `${rubro} ${ciudad}`.trim();
+  const queries: Record<SearchPlatform, string> = {
+    'Google Maps': `${base} WhatsApp`,
+    Facebook: `${base} site:facebook.com`,
+    Instagram: `${base} site:instagram.com`,
+    TikTok: `${base} site:tiktok.com`,
+    'Google normal': `${base} número WhatsApp correo`,
+  };
+
+  return queries[platform];
+}
+
+function buildProspectSearchUrl(query: string, platform: SearchPlatform) {
+  const encoded = encodeURIComponent(query);
+  if (platform === 'Google Maps') return `https://www.google.com/maps/search/${encoded}`;
+  if (platform === 'Facebook') return `https://www.facebook.com/search/pages/?q=${encoded}`;
+  if (platform === 'TikTok') return `https://www.tiktok.com/search?q=${encoded}`;
+  return `https://www.google.com/search?q=${encoded}`;
 }
 
 function normalizeComparable(value: string) {
@@ -449,6 +497,8 @@ function CrmApp() {
   const [leadRubro, setLeadRubro] = useState<Rubro>('Pollería');
   const [leadZona, setLeadZona] = useState('Paita');
   const [leadFuente, setLeadFuente] = useState<Origen>('Google Maps');
+  const [leadSearchPlatform, setLeadSearchPlatform] = useState<SearchPlatform>('Google Maps');
+  const [searchHistory, setSearchHistory] = useState<ProspectSearchRecord[]>(() => loadProspectSearchHistory());
   const [leadImportText, setLeadImportText] = useState('');
   const [leadCandidates, setLeadCandidates] = useState<LeadCandidate[]>(() => loadLeadCandidates());
   const [whatsAppMediaUrl, setWhatsAppMediaUrl] = useState('');
@@ -487,6 +537,10 @@ function CrmApp() {
   useEffect(() => {
     saveLeadCandidates(leadCandidates);
   }, [leadCandidates]);
+
+  useEffect(() => {
+    saveProspectSearchHistory(searchHistory);
+  }, [searchHistory]);
 
   const filteredProspects = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -583,6 +637,30 @@ function CrmApp() {
       },
       ...current,
     ]);
+  };
+
+  const rememberSearch = (platform: SearchPlatform, query: string) => {
+    const record: ProspectSearchRecord = {
+      id: `search-${Date.now().toString(36)}`,
+      query,
+      rubro: leadRubro,
+      ciudad: leadZona,
+      platform,
+      createdAt: new Date().toISOString(),
+    };
+    setSearchHistory((current) => [record, ...current.filter((item) => item.query !== query || item.platform !== platform)].slice(0, 20));
+  };
+
+  const openProspectSearch = (platform: SearchPlatform) => {
+    const query = buildProspectSearchQuery(leadRubro, leadZona, platform);
+    rememberSearch(platform, query);
+    window.open(buildProspectSearchUrl(query, platform), '_blank', 'noopener,noreferrer');
+  };
+
+  const copyProspectSearch = async () => {
+    const query = buildProspectSearchQuery(leadRubro, leadZona, leadSearchPlatform);
+    await navigator.clipboard.writeText(query);
+    rememberSearch(leadSearchPlatform, query);
   };
 
   const updateLeadCandidate = (id: string, patch: Partial<LeadCandidate>) => {
@@ -1002,12 +1080,17 @@ function CrmApp() {
             rubro={leadRubro}
             zona={leadZona}
             fuente={leadFuente}
+            searchPlatform={leadSearchPlatform}
+            searchHistory={searchHistory}
             importText={leadImportText}
             prospects={prospects}
             candidates={leadCandidates}
             onRubroChange={setLeadRubro}
             onZonaChange={setLeadZona}
             onFuenteChange={setLeadFuente}
+            onSearchPlatformChange={setLeadSearchPlatform}
+            onOpenSearch={openProspectSearch}
+            onCopySearch={copyProspectSearch}
             onImportTextChange={setLeadImportText}
             onCreateCandidate={createLeadCandidate}
             onImportCandidates={importLeadCandidates}
@@ -1315,12 +1398,17 @@ function LeadProspectingPanel({
   rubro,
   zona,
   fuente,
+  searchPlatform,
+  searchHistory,
   importText,
   prospects,
   candidates,
   onRubroChange,
   onZonaChange,
   onFuenteChange,
+  onSearchPlatformChange,
+  onOpenSearch,
+  onCopySearch,
   onImportTextChange,
   onCreateCandidate,
   onImportCandidates,
@@ -1332,12 +1420,17 @@ function LeadProspectingPanel({
   rubro: Rubro;
   zona: string;
   fuente: Origen;
+  searchPlatform: SearchPlatform;
+  searchHistory: ProspectSearchRecord[];
   importText: string;
   prospects: Prospect[];
   candidates: LeadCandidate[];
   onRubroChange: (value: Rubro) => void;
   onZonaChange: (value: string) => void;
   onFuenteChange: (value: Origen) => void;
+  onSearchPlatformChange: (value: SearchPlatform) => void;
+  onOpenSearch: (platform: SearchPlatform) => void;
+  onCopySearch: () => void;
   onImportTextChange: (value: string) => void;
   onCreateCandidate: () => void;
   onImportCandidates: () => void;
@@ -1346,10 +1439,7 @@ function LeadProspectingPanel({
   onAddToCrm: (candidate: LeadCandidate) => void;
   onPrepareSaved: (prospectId: string) => void;
 }) {
-  const mapsUrl = buildPublicSearchUrl('maps', rubro, zona);
-  const facebookUrl = buildPublicSearchUrl('facebook', rubro, zona);
-  const instagramUrl = buildPublicSearchUrl('instagram', rubro, zona);
-  const tiktokUrl = buildPublicSearchUrl('tiktok', rubro, zona);
+  const activeQuery = buildProspectSearchQuery(rubro, zona, searchPlatform);
 
   return (
     <div className="crm-card p-5">
@@ -1363,15 +1453,50 @@ function LeadProspectingPanel({
           <Select value={rubro} options={LEAD_SEARCH_RUBROS} onChange={(value) => onRubroChange(value as Rubro)} />
           <input className="crm-input" value={zona} onChange={(event) => onZonaChange(event.target.value)} placeholder="Zona o ciudad, ej. Paita" />
           <Select value={fuente} options={LEAD_SOURCES} onChange={(value) => onFuenteChange(value as Origen)} />
-          <button type="button" className="crm-button-primary justify-center" onClick={onCreateCandidate}><Plus size={16} />Agregar candidato</button>
+          <button type="button" className="crm-button-primary justify-center" onClick={onCreateCandidate}><Plus size={16} />Agregar resultado manual al CRM</button>
         </div>
       </div>
 
-      <div className="mb-4 grid gap-2 md:grid-cols-4">
-        <a className="crm-button-secondary justify-center" href={mapsUrl} target="_blank" rel="noreferrer">Google Maps</a>
-        <a className="crm-button-secondary justify-center" href={facebookUrl} target="_blank" rel="noreferrer">Facebook</a>
-        <a className="crm-button-secondary justify-center" href={instagramUrl} target="_blank" rel="noreferrer">Instagram</a>
-        <a className="crm-button-secondary justify-center" href={tiktokUrl} target="_blank" rel="noreferrer">TikTok</a>
+      <div className="crm-note mb-4">
+        <div className="grid gap-3 lg:grid-cols-[160px_1fr_auto] lg:items-center">
+          <Select value={searchPlatform} options={SEARCH_PLATFORMS} onChange={(value) => onSearchPlatformChange(value as SearchPlatform)} />
+          <input className="crm-input" value={activeQuery} readOnly aria-label="Búsqueda generada" />
+          <button type="button" className="crm-button-secondary justify-center" onClick={onCopySearch}>
+            <Clipboard size={15} />
+            Copiar búsqueda
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-2 md:grid-cols-5">
+        <button type="button" className="crm-button-secondary justify-center" onClick={() => onOpenSearch('Google Maps')}>Buscar en Google Maps</button>
+        <button type="button" className="crm-button-secondary justify-center" onClick={() => onOpenSearch('Facebook')}>Buscar en Facebook</button>
+        <button type="button" className="crm-button-secondary justify-center" onClick={() => onOpenSearch('Instagram')}>Buscar en Instagram</button>
+        <button type="button" className="crm-button-secondary justify-center" onClick={() => onOpenSearch('TikTok')}>Buscar en TikTok</button>
+        <button type="button" className="crm-button-primary justify-center" onClick={() => onOpenSearch('Google normal')}>Buscar teléfonos públicos</button>
+      </div>
+
+      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_320px]">
+        <div className="crm-note text-sm">
+          Ejemplos: <strong>pollerías Paita WhatsApp</strong>, <strong>ferreterías Piura Facebook</strong>, <strong>pollería Paita site:facebook.com</strong>.
+        </div>
+        <div className="crm-mini-card rounded-xl p-3">
+          <p className="crm-muted mb-2 text-xs font-bold uppercase">Historial de búsquedas</p>
+          <div className="space-y-2">
+            {searchHistory.slice(0, 4).length === 0 && <p className="crm-muted text-xs">Aún no hay búsquedas guardadas.</p>}
+            {searchHistory.slice(0, 4).map((item) => (
+              <a
+                key={item.id}
+                className="block rounded-lg border border-black/10 bg-white/50 px-3 py-2 text-xs text-slate-700 transition hover:border-neon/40"
+                href={buildProspectSearchUrl(item.query, item.platform)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <strong>{item.platform}</strong> · {item.query}
+              </a>
+            ))}
+          </div>
+        </div>
       </div>
 
       {candidates.length === 0 && (
