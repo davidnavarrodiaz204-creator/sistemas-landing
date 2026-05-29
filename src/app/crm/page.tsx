@@ -32,6 +32,7 @@ import type {
   WhatsAppMessageLog,
   WhatsAppProspectControl,
 } from '@/lib/whatsapp/whatsappTypes';
+import type { ProspectSearchResult } from '@/lib/prospect-search/prospectSearch.types';
 import {
   CalendarClock,
   CheckCircle2,
@@ -106,6 +107,7 @@ type ProspectSearchRecord = {
   platform: SearchPlatform;
   createdAt: string;
 };
+type RealSearchMode = 'idle' | 'real' | 'demo' | 'error';
 
 const BACKUP_META_KEY = 'factusys_crm_last_backup_at';
 const SALES_DAILY_LOG_KEY = 'factusys_crm_sales_daily_log_v1';
@@ -398,8 +400,8 @@ function parseLeadText(text: string, defaultRubro: Rubro, defaultFuente: Origen)
     .filter((item) => item.nombre);
 }
 
-function toCsvValue(value: string) {
-  return `"${value.replaceAll('"', '""')}"`;
+function toCsvValue(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`;
 }
 
 function downloadCsv(prospects: Prospect[]) {
@@ -436,6 +438,28 @@ function downloadLeadCandidatesCsv(candidates: LeadCandidate[]) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `factusys-prospectos-encontrados-${today()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadSearchResultsCsv(results: ProspectSearchResult[]) {
+  const headers = ['negocio', 'rubro', 'direccion', 'telefono', 'web', 'rating', 'googleMapsUrl', 'fuente'];
+  const rows = results.map((item) => [
+    item.negocio,
+    item.rubro,
+    item.direccion,
+    item.telefono,
+    item.web,
+    item.rating ?? '',
+    item.googleMapsUrl,
+    item.fuente,
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(toCsvValue).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `factusys-busqueda-real-${today()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -497,6 +521,11 @@ function CrmApp() {
   const [leadRubro, setLeadRubro] = useState<Rubro>('Pollería');
   const [leadZona, setLeadZona] = useState('Paita');
   const [leadFuente, setLeadFuente] = useState<Origen>('Google Maps');
+  const [realSearchLimit, setRealSearchLimit] = useState(10);
+  const [realSearchResults, setRealSearchResults] = useState<ProspectSearchResult[]>([]);
+  const [realSearchMode, setRealSearchMode] = useState<RealSearchMode>('idle');
+  const [realSearchMessage, setRealSearchMessage] = useState('');
+  const [realSearchLoading, setRealSearchLoading] = useState(false);
   const [leadSearchPlatform, setLeadSearchPlatform] = useState<SearchPlatform>('Google Maps');
   const [searchHistory, setSearchHistory] = useState<ProspectSearchRecord[]>(() => loadProspectSearchHistory());
   const [leadImportText, setLeadImportText] = useState('');
@@ -662,6 +691,67 @@ function CrmApp() {
     const query = buildProspectSearchQuery(leadRubro, leadZona, leadSearchPlatform);
     await navigator.clipboard.writeText(query);
     rememberSearch(leadSearchPlatform, query);
+  };
+
+  const searchRealProspects = async () => {
+    setRealSearchLoading(true);
+    setRealSearchMessage('');
+    try {
+      const response = await fetch('/api/prospect-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rubro: leadRubro, zona: leadZona, maxResults: realSearchLimit }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setRealSearchMode('error');
+        setRealSearchMessage(data.message || 'No se pudo buscar prospectos.');
+        setRealSearchResults([]);
+        return;
+      }
+      setRealSearchMode(data.mode === 'real' ? 'real' : 'demo');
+      setRealSearchMessage(data.message || '');
+      setRealSearchResults(Array.isArray(data.results) ? data.results : []);
+    } catch {
+      setRealSearchMode('error');
+      setRealSearchMessage('No se pudo conectar con el buscador.');
+      setRealSearchResults([]);
+    } finally {
+      setRealSearchLoading(false);
+    }
+  };
+
+  const searchResultDuplicateReason = (result: ProspectSearchResult) => {
+    const phone = result.telefono.replace(/\D/g, '');
+    const name = normalizeComparable(result.negocio);
+    const web = normalizeComparable(result.web || result.googleMapsUrl);
+    if (phone && prospects.some((item) => item.telefono.replace(/\D/g, '') === phone)) return 'Teléfono ya existe en CRM';
+    if (name && prospects.some((item) => normalizeComparable(item.negocio) === name)) return 'Nombre ya existe en CRM';
+    if (web && prospects.some((item) => normalizeComparable(item.redSocial) === web)) return 'Web/link ya existe en CRM';
+    return '';
+  };
+
+  const addSearchResultToCrm = (result: ProspectSearchResult) => {
+    const duplicateReason = searchResultDuplicateReason(result);
+    if (duplicateReason && !window.confirm(`${duplicateReason}. ¿Deseas agregarlo de todos modos?`)) return;
+    const prospect = normalizeProspect({
+      negocio: result.negocio,
+      rubro: RUBROS.includes(result.rubro as Rubro) ? result.rubro as Rubro : leadRubro,
+      zona: result.direccion || leadZona,
+      contacto: 'Por confirmar',
+      telefono: result.telefono,
+      redSocial: result.web || result.googleMapsUrl,
+      interes: inferInterestFromRubro(RUBROS.includes(result.rubro as Rubro) ? result.rubro as Rubro : leadRubro),
+      estado: 'Nuevo',
+      fechaUltimoContacto: '',
+      fechaProximoContacto: today(),
+      nota: `Resultado de búsqueda ${result.fuente}. Rating: ${result.rating ?? 'sin rating'}. Dirección: ${result.direccion || 'sin dirección'}`,
+      origen: 'Google Maps',
+      createdAt: new Date().toISOString(),
+      isDemo: realSearchMode === 'demo',
+    });
+    setProspects([prospect, ...prospects]);
+    void saveStoredProspect(prospect, prospects);
   };
 
   const updateLeadCandidate = (id: string, patch: Partial<LeadCandidate>) => {
@@ -1120,6 +1210,11 @@ function CrmApp() {
             rubro={leadRubro}
             zona={leadZona}
             fuente={leadFuente}
+            realSearchLimit={realSearchLimit}
+            realSearchResults={realSearchResults}
+            realSearchMode={realSearchMode}
+            realSearchMessage={realSearchMessage}
+            realSearchLoading={realSearchLoading}
             searchPlatform={leadSearchPlatform}
             searchHistory={searchHistory}
             importText={leadImportText}
@@ -1128,6 +1223,11 @@ function CrmApp() {
             onRubroChange={setLeadRubro}
             onZonaChange={setLeadZona}
             onFuenteChange={setLeadFuente}
+            onRealSearchLimitChange={setRealSearchLimit}
+            onSearchRealProspects={searchRealProspects}
+            onAddSearchResult={addSearchResultToCrm}
+            onExportSearchResults={() => downloadSearchResultsCsv(realSearchResults)}
+            getSearchResultDuplicateReason={searchResultDuplicateReason}
             onSearchPlatformChange={setLeadSearchPlatform}
             onOpenSearch={openProspectSearch}
             onCopySearch={copyProspectSearch}
@@ -1537,6 +1637,11 @@ function LeadProspectingPanel({
   rubro,
   zona,
   fuente,
+  realSearchLimit,
+  realSearchResults,
+  realSearchMode,
+  realSearchMessage,
+  realSearchLoading,
   searchPlatform,
   searchHistory,
   importText,
@@ -1545,6 +1650,11 @@ function LeadProspectingPanel({
   onRubroChange,
   onZonaChange,
   onFuenteChange,
+  onRealSearchLimitChange,
+  onSearchRealProspects,
+  onAddSearchResult,
+  onExportSearchResults,
+  getSearchResultDuplicateReason,
   onSearchPlatformChange,
   onOpenSearch,
   onCopySearch,
@@ -1559,6 +1669,11 @@ function LeadProspectingPanel({
   rubro: Rubro;
   zona: string;
   fuente: Origen;
+  realSearchLimit: number;
+  realSearchResults: ProspectSearchResult[];
+  realSearchMode: RealSearchMode;
+  realSearchMessage: string;
+  realSearchLoading: boolean;
   searchPlatform: SearchPlatform;
   searchHistory: ProspectSearchRecord[];
   importText: string;
@@ -1567,6 +1682,11 @@ function LeadProspectingPanel({
   onRubroChange: (value: Rubro) => void;
   onZonaChange: (value: string) => void;
   onFuenteChange: (value: Origen) => void;
+  onRealSearchLimitChange: (value: number) => void;
+  onSearchRealProspects: () => void;
+  onAddSearchResult: (result: ProspectSearchResult) => void;
+  onExportSearchResults: () => void;
+  getSearchResultDuplicateReason: (result: ProspectSearchResult) => string;
   onSearchPlatformChange: (value: SearchPlatform) => void;
   onOpenSearch: (platform: SearchPlatform) => void;
   onCopySearch: () => void;
@@ -1594,6 +1714,74 @@ function LeadProspectingPanel({
           <Select value={fuente} options={LEAD_SOURCES} onChange={(value) => onFuenteChange(value as Origen)} />
           <button type="button" className="crm-button-primary justify-center" onClick={onCreateCandidate}><Plus size={16} />Agregar resultado manual al CRM</button>
         </div>
+      </div>
+
+      <div className="crm-card mb-4 border border-neon/20 p-4">
+        <div className="grid gap-3 lg:grid-cols-[160px_1fr_130px_auto_auto] lg:items-end">
+          <label className="block">
+            <span className="crm-label">Rubro</span>
+            <Select value={rubro} options={LEAD_SEARCH_RUBROS} onChange={(value) => onRubroChange(value as Rubro)} />
+          </label>
+          <label className="block">
+            <span className="crm-label">Ciudad/Zona</span>
+            <input className="crm-input" value={zona} onChange={(event) => onZonaChange(event.target.value)} placeholder="Paita, Piura, Talara..." />
+          </label>
+          <label className="block">
+            <span className="crm-label">Cantidad</span>
+            <input className="crm-input" type="number" min={1} max={20} value={realSearchLimit} onChange={(event) => onRealSearchLimitChange(Number(event.target.value || 10))} />
+          </label>
+          <button type="button" className="crm-button-primary justify-center" onClick={onSearchRealProspects} disabled={realSearchLoading}>
+            <Search size={16} />
+            {realSearchLoading ? 'Buscando...' : 'Buscar datos reales'}
+          </button>
+          <button type="button" className="crm-button-secondary justify-center" onClick={onExportSearchResults} disabled={realSearchResults.length === 0}>
+            <Download size={16} />
+            Exportar resultados
+          </button>
+        </div>
+        {realSearchMessage && (
+          <p className={`crm-note mt-3 text-sm ${realSearchMode === 'demo' ? 'border-yellow-300 bg-yellow-50 text-yellow-800' : ''}`}>
+            {realSearchMode === 'demo' ? 'Modo demo: ' : ''}{realSearchMessage}
+          </p>
+        )}
+        {realSearchMode === 'demo' && (
+          <p className="crm-muted mt-2 text-xs">Configura Google Places o SerpApi para traer datos reales.</p>
+        )}
+        {realSearchResults.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead>
+                <tr className="crm-muted border-b border-black/10 text-xs uppercase">
+                  <th className="py-2 pr-3">Negocio</th>
+                  <th className="py-2 pr-3">Rubro</th>
+                  <th className="py-2 pr-3">Dirección</th>
+                  <th className="py-2 pr-3">Teléfono</th>
+                  <th className="py-2 pr-3">Web</th>
+                  <th className="py-2 pr-3">Rating</th>
+                  <th className="py-2 pr-3">Fuente</th>
+                  <th className="py-2 pr-3">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {realSearchResults.map((result) => {
+                  const duplicate = getSearchResultDuplicateReason(result);
+                  return (
+                    <tr key={result.id} className="border-b border-black/5 align-top">
+                      <td className="py-3 pr-3 font-bold text-slate-900 dark:text-white">{result.negocio}{duplicate && <p className="mt-1 text-xs text-red-500">{duplicate}</p>}</td>
+                      <td className="py-3 pr-3">{result.rubro}</td>
+                      <td className="py-3 pr-3 crm-muted">{result.direccion || 'Sin dirección'}</td>
+                      <td className="py-3 pr-3">{result.telefono || 'Sin teléfono'}</td>
+                      <td className="py-3 pr-3">{result.web ? <a className="text-neon" href={result.web} target="_blank" rel="noreferrer">Web</a> : 'Sin web'}</td>
+                      <td className="py-3 pr-3">{result.rating ?? '-'}</td>
+                      <td className="py-3 pr-3"><a className="text-neon" href={result.googleMapsUrl} target="_blank" rel="noreferrer">{result.fuente}</a></td>
+                      <td className="py-3 pr-3"><button type="button" className="crm-button-secondary min-h-0 px-3 py-2 text-xs" onClick={() => onAddSearchResult(result)}>Agregar al CRM</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="crm-note mb-4">
