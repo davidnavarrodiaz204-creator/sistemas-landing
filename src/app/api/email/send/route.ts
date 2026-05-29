@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sendEmailMessage } from '@/lib/email/emailClient';
+import { isEmailConfigured, sendEmailMessage } from '@/lib/email/emailClient';
 
 type SendEmailBody = {
   to?: string;
@@ -14,6 +14,19 @@ type SendEmailBody = {
 
 function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+export async function GET() {
+  const configured = isEmailConfigured();
+
+  return NextResponse.json({
+    ok: configured,
+    status: configured ? 'configured' : 'simulation',
+    mode: configured ? 'configured' : 'simulation',
+    message: configured
+      ? 'Email configurado para envio desde servidor.'
+      : 'Email no configurado. El CRM esta en modo simulacion.',
+  });
 }
 
 export async function POST(request: Request) {

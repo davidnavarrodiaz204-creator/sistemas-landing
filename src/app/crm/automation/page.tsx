@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import InternalGuard from '@/components/InternalGuard';
-import { CheckCircle2, Download, FileUp, Pause, Play, Plus, Send, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Download, FileUp, Mail, Pause, Play, Plus, Send, ShieldCheck, Smartphone, Wifi } from 'lucide-react';
 
 type Channel = 'WhatsApp' | 'Email' | 'Ambos';
 type CampaignStatus = 'Borrador' | 'Lista preparada' | 'Enviando' | 'Pausada' | 'Finalizada';
@@ -51,6 +51,19 @@ type QueueItem = {
   error?: string;
 };
 
+type SenderConfig = {
+  whatsappPrincipal: string;
+  emailRemitente: string;
+  nombreRemitente: string;
+};
+
+type ChannelStatus = {
+  openwa: 'connected' | 'simulation' | 'error' | 'idle';
+  email: 'configured' | 'simulation' | 'error' | 'idle';
+  openwaMessage: string;
+  emailMessage: string;
+};
+
 type AutomationHistory = {
   id: string;
   campaignId: string;
@@ -76,8 +89,14 @@ const CAMPAIGNS_KEY = 'factusys_automation_campaigns_v1';
 const PROSPECTS_KEY = 'factusys_automation_prospects_v1';
 const QUEUE_KEY = 'factusys_automation_queue_v1';
 const HISTORY_KEY = 'factusys_automation_history_v1';
+const SENDER_CONFIG_KEY = 'salesSenderConfig';
 const RUBROS: Rubro[] = ['Pollería', 'Restaurante', 'Cevichería', 'Ferretería', 'Minimarket', 'Otro'];
 const CHANNELS: Channel[] = ['WhatsApp', 'Email', 'Ambos'];
+const DEFAULT_SENDER_CONFIG: SenderConfig = {
+  whatsappPrincipal: '',
+  emailRemitente: 'factusys.peru@gmail.com',
+  nombreRemitente: 'FACTUSYS Perú',
+};
 const UNSUBSCRIBE = 'Si no deseas recibir más información, me indicas y no vuelvo a escribirte.';
 
 function today() {
@@ -180,6 +199,15 @@ function AutomationCenter() {
   const [importText, setImportText] = useState('');
   const [manual, setManual] = useState({ negocio: '', ciudad: '', whatsapp: '', email: '', link: '', fuente: 'Manual', nota: '' });
   const [isRunning, setIsRunning] = useState(false);
+  const [senderConfig, setSenderConfig] = useState<SenderConfig>(() => load(SENDER_CONFIG_KEY, DEFAULT_SENDER_CONFIG));
+  const [channelStatus, setChannelStatus] = useState<ChannelStatus>({
+    openwa: 'idle',
+    email: 'idle',
+    openwaMessage: 'OpenWA pendiente de revisar.',
+    emailMessage: 'Email pendiente de revisar.',
+  });
+  const runningRef = useRef(false);
+  const dailyCounterRef = useRef({ WhatsApp: 0, Email: 0 });
 
   const activeCampaign = campaigns.find((item) => item.id === activeCampaignId) || campaigns[0] || emptyCampaign();
   const campaignProspects = prospects.filter((item) => item.campaignId === activeCampaign.id);
@@ -190,6 +218,41 @@ function AutomationCenter() {
   useEffect(() => save(PROSPECTS_KEY, prospects), [prospects]);
   useEffect(() => save(QUEUE_KEY, queue), [queue]);
   useEffect(() => save(HISTORY_KEY, history), [history]);
+  useEffect(() => save(SENDER_CONFIG_KEY, senderConfig), [senderConfig]);
+  useEffect(() => {
+    void refreshChannelStatus();
+  }, []);
+
+  async function refreshChannelStatus() {
+    const next: ChannelStatus = {
+      openwa: 'simulation',
+      email: 'simulation',
+      openwaMessage: 'OpenWA no configurado. Modo simulacion.',
+      emailMessage: 'SMTP no configurado. Modo simulacion.',
+    };
+
+    try {
+      const response = await fetch('/api/whatsapp/send', { method: 'GET' });
+      const data = await response.json();
+      next.openwa = data.status === 'connected' ? 'connected' : data.status === 'error' ? 'error' : 'simulation';
+      next.openwaMessage = data.message || next.openwaMessage;
+    } catch {
+      next.openwa = 'error';
+      next.openwaMessage = 'No se pudo revisar OpenWA.';
+    }
+
+    try {
+      const response = await fetch('/api/email/send', { method: 'GET' });
+      const data = await response.json();
+      next.email = data.status === 'configured' ? 'configured' : data.status === 'error' ? 'error' : 'simulation';
+      next.emailMessage = data.message || next.emailMessage;
+    } catch {
+      next.email = 'error';
+      next.emailMessage = 'No se pudo revisar Email.';
+    }
+
+    setChannelStatus(next);
+  }
 
   const dashboard = useMemo(() => ({
     wa: campaignHistory.filter((item) => item.canal === 'WhatsApp' && item.resultado.includes('Enviado')).length,
@@ -260,7 +323,23 @@ function AutomationCenter() {
     updateCampaign({ estado: 'Lista preparada' });
   };
 
-  const sentToday = (canal: string) => campaignHistory.filter((item) => item.canal === canal && item.fecha.slice(0, 10) === today()).length;
+  const sentToday = (canal: 'WhatsApp' | 'Email') => Math.max(
+    dailyCounterRef.current[canal],
+    campaignHistory.filter((item) => item.canal === canal && item.fecha.slice(0, 10) === today() && item.resultado.includes('Enviado')).length,
+  );
+
+  const refreshDailyCounters = () => {
+    dailyCounterRef.current = {
+      WhatsApp: campaignHistory.filter((item) => item.canal === 'WhatsApp' && item.fecha.slice(0, 10) === today() && item.resultado.includes('Enviado')).length,
+      Email: campaignHistory.filter((item) => item.canal === 'Email' && item.fecha.slice(0, 10) === today() && item.resultado.includes('Enviado')).length,
+    };
+  };
+
+  const findApprovedQueueItem = () => campaignQueue.find((item) => {
+    if (item.status !== 'Aprobado' && item.status !== 'Pendiente') return false;
+    const prospect = prospects.find((entry) => entry.id === item.prospectId);
+    return Boolean(prospect && prospect.reviewStatus === 'Aprobado' && !prospect.duplicateReason);
+  });
 
   const sendQueueItem = async (item: QueueItem) => {
     const prospect = prospects.find((entry) => entry.id === item.prospectId);
@@ -274,7 +353,7 @@ function AutomationCenter() {
     const endpoint = item.canal === 'WhatsApp' ? '/api/whatsapp/send' : '/api/email/send';
     const body = item.canal === 'WhatsApp'
       ? { phone: prospect.whatsapp, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true }
-      : { to: prospect.email, subject: activeCampaign.asuntoEmail, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true };
+      : { to: prospect.email, subject: activeCampaign.asuntoEmail, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true, fromName: senderConfig.nombreRemitente, fromEmail: senderConfig.emailRemitente };
 
     try {
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -287,6 +366,7 @@ function AutomationCenter() {
   };
 
   const markQueueSent = (item: QueueItem, message: string, result: string) => {
+    dailyCounterRef.current[item.canal] += 1;
     setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'Enviado', lastSentAt: new Date().toISOString(), error: '' } : entry));
     setHistory((current) => [{
       id: `history-${Date.now().toString(36)}`,
@@ -316,24 +396,29 @@ function AutomationCenter() {
   };
 
   const sendNext = () => {
-    const next = campaignQueue.find((item) => item.status === 'Aprobado' || item.status === 'Pendiente');
+    refreshDailyCounters();
+    const next = findApprovedQueueItem();
     if (next) void sendQueueItem(next);
   };
 
   const startQueue = async () => {
     if (!window.confirm('Confirmación fuerte: se enviará cola controlada solo a aprobados, respetando límites diarios. ¿Continuar?')) return;
+    refreshDailyCounters();
+    runningRef.current = true;
     setIsRunning(true);
     updateCampaign({ estado: 'Enviando' });
     const pending = campaignQueue.filter((item) => item.status === 'Aprobado' || item.status === 'Pendiente');
     for (const item of pending) {
-      if (!isRunning && pending.indexOf(item) > 0) break;
+      if (!runningRef.current) break;
       await sendQueueItem(item);
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      await new Promise((resolve) => window.setTimeout(resolve, 1800));
     }
+    runningRef.current = false;
     setIsRunning(false);
   };
 
   const pauseQueue = () => {
+    runningRef.current = false;
     setIsRunning(false);
     updateCampaign({ estado: 'Pausada' });
     setQueue((current) => current.map((item) => item.campaignId === activeCampaign.id && item.status === 'Pendiente' ? { ...item, status: 'Pausado' } : item));
@@ -360,6 +445,27 @@ function AutomationCenter() {
             <a href="/crm/executive" className="crm-button-secondary justify-center">Ejecutivo</a>
           </div>
         </header>
+
+        <section className="mb-6 grid gap-5 xl:grid-cols-[420px_1fr]">
+          <SenderConfigPanel
+            config={senderConfig}
+            status={channelStatus}
+            onChange={setSenderConfig}
+            onRefresh={refreshChannelStatus}
+          />
+          <div className="crm-card border border-yellow-300/60 bg-yellow-50 p-5 text-yellow-950 dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-100">
+            <p className="crm-eyebrow mb-2 text-yellow-700 dark:text-yellow-200">Alerta importante</p>
+            <h2 className="crm-section-title text-yellow-950 dark:text-yellow-50">Para envio real configura OPENWA_API_URL, OPENWA_API_KEY y SMTP.</h2>
+            <p className="mt-2 text-sm">
+              Si falta OpenWA o SMTP, FACTUSYS registrara el intento como modo simulacion. No se fingira que fue enviado real.
+            </p>
+            <div className="mt-4 grid gap-2 md:grid-cols-3">
+              <StatusPill label="WhatsApp manual listo" ready />
+              <StatusPill label={`OpenWA ${channelStatus.openwa === 'connected' ? 'conectado' : 'simulado'}`} ready={channelStatus.openwa === 'connected'} />
+              <StatusPill label={`Email ${channelStatus.email === 'configured' ? 'configurado' : 'simulado'}`} ready={channelStatus.email === 'configured'} />
+            </div>
+          </div>
+        </section>
 
         <section className="mb-6 grid gap-5 xl:grid-cols-[420px_1fr]">
           <div className="crm-card p-5">
@@ -395,6 +501,72 @@ function AutomationCenter() {
         </section>
       </div>
     </main>
+  );
+}
+
+function SenderConfigPanel({
+  config,
+  status,
+  onChange,
+  onRefresh,
+}: {
+  config: SenderConfig;
+  status: ChannelStatus;
+  onChange: (value: SenderConfig) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="crm-card p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="crm-eyebrow mb-2">Mis canales</p>
+          <h2 className="crm-section-title">Datos de David</h2>
+        </div>
+        <button type="button" className="crm-button-secondary min-h-0 px-3 py-2 text-xs" onClick={onRefresh}>
+          <Wifi size={14} /> Revisar
+        </button>
+      </div>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="crm-label">WhatsApp principal de David</span>
+          <input className="crm-input" value={config.whatsappPrincipal} onChange={(event) => onChange({ ...config, whatsappPrincipal: event.target.value })} placeholder="Ej. 51999999999" />
+        </label>
+        <label className="block">
+          <span className="crm-label">Email remitente</span>
+          <input className="crm-input" value={config.emailRemitente} onChange={(event) => onChange({ ...config, emailRemitente: event.target.value })} />
+        </label>
+        <label className="block">
+          <span className="crm-label">Nombre remitente</span>
+          <input className="crm-input" value={config.nombreRemitente} onChange={(event) => onChange({ ...config, nombreRemitente: event.target.value })} />
+        </label>
+      </div>
+      <div className="mt-4 space-y-2">
+        <ChannelLine icon="whatsapp" label="WhatsApp manual listo" detail={config.whatsappPrincipal || 'Puedes abrir WhatsApp manualmente desde el CRM.'} ready />
+        <ChannelLine icon="whatsapp" label={status.openwa === 'connected' ? 'OpenWA conectado' : 'OpenWA simulado'} detail={status.openwaMessage} ready={status.openwa === 'connected'} />
+        <ChannelLine icon="email" label={status.email === 'configured' ? 'Email configurado' : 'Email simulado'} detail={status.emailMessage} ready={status.email === 'configured'} />
+      </div>
+    </div>
+  );
+}
+
+function ChannelLine({ icon, label, detail, ready }: { icon: 'whatsapp' | 'email'; label: string; detail: string; ready: boolean }) {
+  const Icon = icon === 'email' ? Mail : Smartphone;
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-black/10 p-3 dark:border-white/10">
+      <Icon className={ready ? 'text-neon' : 'text-yellow-500'} size={18} />
+      <div>
+        <p className="text-sm font-bold">{label}</p>
+        <p className="crm-muted text-xs">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ label, ready }: { label: string; ready: boolean }) {
+  return (
+    <span className={`rounded-full border px-3 py-2 text-xs font-bold ${ready ? 'border-neon/40 bg-neon/10 text-neon' : 'border-yellow-400/50 bg-yellow-100 text-yellow-800 dark:bg-yellow-400/10 dark:text-yellow-100'}`}>
+      {label}
+    </span>
   );
 }
 
@@ -462,8 +634,8 @@ function QueuePanel({ queue, onPrepare, onSendNext, onStart, onPause, isRunning 
       <h2 className="crm-section-title">Cola de envío</h2>
       <div className="mt-4 grid gap-2">
         <button type="button" className="crm-button-secondary justify-center" onClick={onPrepare}><CheckCircle2 size={16} />Preparar cola aprobada</button>
-        <button type="button" className="crm-button-primary justify-center" onClick={onSendNext}><Send size={16} />Enviar siguiente</button>
-        <button type="button" className="crm-button-secondary justify-center" onClick={onStart} disabled={isRunning}><Play size={16} />Iniciar cola controlada</button>
+        <button type="button" className="crm-button-primary justify-center" onClick={onSendNext}><Send size={16} />Enviar siguiente ahora</button>
+        <button type="button" className="crm-button-secondary justify-center" onClick={onStart} disabled={isRunning}><Play size={16} />Enviar cola aprobada</button>
         <button type="button" className="crm-button-danger justify-center" onClick={onPause}><Pause size={16} />Pausar cola</button>
       </div>
       <div className="mt-4 space-y-2">{queue.slice(0, 8).map((item) => <div key={item.id} className="crm-mini-card rounded-xl p-3"><p className="font-bold text-slate-900">{item.canal} · {item.status}</p>{item.error && <p className="text-xs text-red-500">{item.error}</p>}</div>)}</div>
