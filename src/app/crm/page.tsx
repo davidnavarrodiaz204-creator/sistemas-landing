@@ -515,6 +515,7 @@ function CrmApp() {
   const [openWaStatus, setOpenWaStatus] = useState<OpenWaStatus>('idle');
   const [openWaMessage, setOpenWaMessage] = useState('Modo simulacion hasta probar conexion.');
   const [testingOpenWa, setTestingOpenWa] = useState(false);
+  const [testContact, setTestContact] = useState({ whatsapp: '', email: '' });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -793,6 +794,34 @@ function CrmApp() {
     clearProspects();
   };
 
+  const createTestProspect = () => {
+    const whatsapp = testContact.whatsapp.trim();
+    const email = testContact.email.trim();
+    if (!whatsapp && !email) {
+      window.alert('Escribe tu WhatsApp o correo para crear una prueba.');
+      return;
+    }
+    const prospect = normalizeProspect({
+      negocio: 'Prueba David FACTUSYS',
+      rubro: 'Otro',
+      zona: 'Paita',
+      contacto: 'David',
+      telefono: whatsapp,
+      redSocial: email,
+      interes: 'Ambos',
+      estado: 'Nuevo',
+      fechaUltimoContacto: '',
+      fechaProximoContacto: today(),
+      nota: `Prospecto de prueba. Correo: ${email || 'sin correo'}`,
+      origen: 'Manual',
+      createdAt: new Date().toISOString(),
+      isDemo: false,
+    });
+    setProspects([prospect, ...prospects]);
+    void saveStoredProspect(prospect, prospects);
+    openAssistant(prospect);
+  };
+
   const startWorkday = () => {
     setWorkdayStarted(true);
     setSearch('');
@@ -1026,6 +1055,15 @@ function CrmApp() {
         </header>
 
         <section className="mb-6">
+          <SimpleSalesMode
+            openWaStatus={openWaStatus}
+            testContact={testContact}
+            onTestContactChange={setTestContact}
+            onCreateTest={createTestProspect}
+          />
+        </section>
+
+        <section className="mb-6">
           <DailySalesPlanPanel
             progress={dailyProgress}
             logs={dailyLogs}
@@ -1077,7 +1115,7 @@ function CrmApp() {
           />
         </section>
 
-        <section className="mb-6">
+        <section id="buscar-prospectos" className="mb-6">
           <LeadProspectingPanel
             rubro={leadRubro}
             zona={leadZona}
@@ -1115,12 +1153,14 @@ function CrmApp() {
           <Pipeline prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
         </section>
 
-        <section className="mb-6">
+        <section id="seguimientos" className="mb-6">
           <FollowupsView prospects={filteredProspects} />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
+          <div id="agregar-negocio">
           <ProspectFormCard form={form} setField={setField} onSubmit={addProspect} />
+          </div>
           <div className="space-y-4">
             <Filters
               search={search}
@@ -1132,7 +1172,9 @@ function CrmApp() {
               interesFilter={interesFilter}
               setInteresFilter={setInteresFilter}
             />
-            <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={deleteProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+            <div id="lista-prospectos">
+              <ProspectList prospects={filteredProspects} copiedId={copiedId} onCopy={copyMessage} onUpdate={updateProspect} onDelete={deleteProspect} onPrepare={prepareMessage} onOpenWhatsApp={openWhatsApp} onSendOpenWa={sendOpenWa} onMarkSent={markSent} onMarkAnswered={markAnswered} onNoContact={markNoContact} onOpenAssistant={openAssistant} allProspects={prospects} />
+            </div>
           </div>
         </section>
       </div>
@@ -1271,6 +1313,101 @@ function MetricCard({ label, value }: { label: string; value: number }) {
     <div className="crm-card p-4">
       <span className="crm-muted text-xs font-medium">{label}</span>
       <p className="crm-number mt-3">{value}</p>
+    </div>
+  );
+}
+
+function SimpleSalesMode({
+  openWaStatus,
+  testContact,
+  onTestContactChange,
+  onCreateTest,
+}: {
+  openWaStatus: OpenWaStatus;
+  testContact: { whatsapp: string; email: string };
+  onTestContactChange: (value: { whatsapp: string; email: string }) => void;
+  onCreateTest: () => void;
+}) {
+  const openWaReady = openWaStatus === 'connected';
+  const emailReady = false;
+  const supabaseReady = process.env.NEXT_PUBLIC_CRM_STORAGE === 'supabase';
+  const steps = [
+    { title: 'Paso 1: Buscar negocios', button: 'Buscar prospectos', href: '#buscar-prospectos' },
+    { title: 'Paso 2: Guardar prospectos', button: 'Agregar negocio', href: '#agregar-negocio' },
+    { title: 'Paso 3: Preparar mensaje', button: 'Asistente IA', href: '#lista-prospectos' },
+    { title: 'Paso 4: Enviar', button: 'WhatsApp / OpenWA', href: '#whatsapp-estado' },
+    { title: 'Paso 5: Seguimiento', button: 'Ver seguimientos', href: '#seguimientos' },
+    { title: 'Paso 6: Ver dinero', button: 'Dashboard Ejecutivo', href: '/crm/executive' },
+  ];
+
+  return (
+    <div className="crm-card overflow-hidden p-5 sm:p-6">
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <p className="crm-eyebrow mb-2">Modo simple para vender</p>
+          <h2 className="crm-section-title text-2xl">Hazlo en este orden</h2>
+          <p className="crm-muted mt-2 max-w-2xl text-sm">No necesitas entender todo el CRM. Sigue estos pasos y usa las funciones avanzadas solo cuando ya tengas prospectos.</p>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {steps.map((step) => (
+              <a key={step.title} href={step.href} className="crm-mini-card rounded-2xl p-4 transition hover:-translate-y-0.5 hover:border-neon/50">
+                <p className="font-bold text-slate-900">{step.title}</p>
+                <span className="crm-button-secondary mt-3 min-h-0 w-full justify-center px-3 py-2 text-xs">{step.button}</span>
+              </a>
+            ))}
+          </div>
+
+          <div className="mt-5 grid gap-3 lg:grid-cols-2">
+            <div className="crm-note">
+              <p className="mb-2 font-bold">Qué funciona ahora</p>
+              {['Guardar negocios', 'Crear mensajes', 'Abrir WhatsApp manual', 'Exportar Excel/CSV', 'Backup', 'Seguimientos'].map((item) => (
+                <p key={item} className="flex items-center gap-2 text-sm"><CheckCircle2 size={15} className="text-neon" />{item}</p>
+              ))}
+            </div>
+            <div className="crm-note">
+              <p className="mb-2 font-bold">Qué falta configurar para automático</p>
+              {['OpenWA conectado con QR', 'SMTP del correo', 'Supabase opcional'].map((item) => (
+                <p key={item} className="flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-yellow-500" />{item}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="crm-mini-card rounded-2xl p-4">
+            <h3 className="crm-section-title text-base">Estado simple</h3>
+            <div className="mt-3 grid gap-2">
+              <StatusLine label="CRM listo" ready />
+              <StatusLine label="WhatsApp manual listo" ready />
+              <StatusLine label={`OpenWA ${openWaReady ? 'conectado' : 'pendiente'}`} ready={openWaReady} />
+              <StatusLine label={`Email ${emailReady ? 'configurado' : 'pendiente'}`} ready={emailReady} />
+              <StatusLine label={`Supabase ${supabaseReady ? 'activo' : 'pendiente'}`} ready={supabaseReady} />
+            </div>
+            <div id="whatsapp-estado" className="crm-note mt-4 text-sm">
+              WhatsApp manual disponible ahora. OpenWA: {openWaReady ? 'Conectado' : 'Simulado / pendiente'}. Email: Simulado / pendiente.
+            </div>
+          </div>
+
+          <div className="crm-mini-card rounded-2xl p-4">
+            <h3 className="crm-section-title text-base">Probar conmigo</h3>
+            <p className="crm-muted mt-1 text-sm">Crea un prospecto de prueba con tus datos para ensayar sin clientes reales.</p>
+            <div className="mt-3 grid gap-2">
+              <input className="crm-input" value={testContact.whatsapp} onChange={(event) => onTestContactChange({ ...testContact, whatsapp: event.target.value })} placeholder="Tu WhatsApp" />
+              <input className="crm-input" value={testContact.email} onChange={(event) => onTestContactChange({ ...testContact, email: event.target.value })} placeholder="Tu correo" />
+              <button type="button" className="crm-button-primary justify-center" onClick={onCreateTest}>Crear prueba y abrir Asistente IA</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function StatusLine({ label, ready }: { label: string; ready: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-black/10 bg-white/50 px-3 py-2 text-sm">
+      <span className="font-bold text-slate-900">{label}</span>
+      <span className={`rounded-full px-2 py-1 text-xs font-black ${ready ? 'bg-neon/15 text-neon' : 'bg-yellow-100 text-yellow-700'}`}>{ready ? 'Listo' : 'Pendiente'}</span>
     </div>
   );
 }
