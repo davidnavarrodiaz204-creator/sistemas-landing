@@ -10,6 +10,7 @@ type SendRequestBody = {
   sentToday?: number;
   confirmSend?: boolean;
   mediaUrl?: string;
+  campaignId?: string;
 };
 
 const dailySendCounter = new Map<string, number>();
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
   const phone = normalizePeruPhone(body.phone || '');
   const message = (body.message || '').trim();
   const prospectId = (body.prospectId || '').trim();
+  const campaignId = (body.campaignId || '').trim();
   const mediaUrl = (body.mediaUrl || '').trim();
   const sentToday = Math.max(Number(body.sentToday || 0), currentServerCount());
 
@@ -83,6 +85,7 @@ export async function POST(request: Request) {
     remainingToday: Math.max(DEFAULT_DAILY_WHATSAPP_LIMIT - nextSentToday, 0),
     historyEvent: {
       prospectId,
+      campaignId,
       phone,
       message,
       mediaUrl,
