@@ -6,31 +6,31 @@ import { FactusysMarkNeon } from './BrandLogo';
 import { Lock, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface InternalLoginProps {
-  onLogin: (password: string) => boolean;
+  onLogin: (password: string) => Promise<boolean>;
+  loading?: boolean;
 }
 
-export default function InternalLogin({ onLogin }: InternalLoginProps) {
+export default function InternalLogin({ onLogin, loading: parentLoading }: InternalLoginProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [shake, setShake] = useState(false);
+  const loading = fetching || parentLoading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
-    setLoading(true);
+    setFetching(true);
     setError(false);
 
-    setTimeout(() => {
-      const ok = onLogin(password);
-      if (!ok) {
-        setError(true);
-        setShake(true);
-        setPassword('');
-        setLoading(false);
-        setTimeout(() => setShake(false), 500);
-      }
-    }, 400);
+    const ok = await onLogin(password);
+    if (!ok) {
+      setError(true);
+      setShake(true);
+      setPassword('');
+      setTimeout(() => setShake(false), 500);
+    }
+    setFetching(false);
   };
 
   return (
@@ -124,7 +124,10 @@ export default function InternalLogin({ onLogin }: InternalLoginProps) {
                          active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer border-none"
             >
               {loading ? (
-                <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Validando...
+                </span>
               ) : (
                 <>
                   Ingresar

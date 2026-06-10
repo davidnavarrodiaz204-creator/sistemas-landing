@@ -9,7 +9,7 @@ import { LogOut } from 'lucide-react';
 const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24h
 
 export default function InternalGuard({ children, timeoutMs }: { children: React.ReactNode; timeoutMs?: number }) {
-  const { authed, login, logout } = useInternalAuth(timeoutMs ?? SESSION_TIMEOUT_MS);
+  const { authed, loading, login, logout } = useInternalAuth(timeoutMs ?? SESSION_TIMEOUT_MS);
   const [showLogout, setShowLogout] = useState(false);
 
   const handleLogout = () => {
@@ -20,7 +20,7 @@ export default function InternalGuard({ children, timeoutMs }: { children: React
   return (
     <AnimatePresence mode="wait">
       {!authed ? (
-        <InternalLogin key="login" onLogin={login} />
+        <InternalLogin key="login" onLogin={login} loading={loading} />
       ) : (
         <motion.div
           key="content"

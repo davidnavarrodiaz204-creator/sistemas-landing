@@ -2,7 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import InternalGuard from '@/components/InternalGuard';
-import { CheckCircle2, Download, FileUp, Mail, Pause, Play, Plus, Send, ShieldCheck, Smartphone, Wifi } from 'lucide-react';
+import { scoreFromProspect } from '@/lib/crm-automation/leadScoring';
+import { addLog, getLogs } from '@/lib/crm-automation/automationLogger';
+import { generateVariedWhatsAppMessage, generateVariedEmailSubject, generateVariedEmailBody } from '@/lib/crm-automation/messageVariator';
+import { enrichProspect } from '@/lib/crm-automation/prospectEnricher';
+import { normalizePeruPhone } from '@/lib/crm-automation/prospectNormalizer';
+import { AutoSearchPanel, type SearchResultItem } from './AutoSearchPanel';
+import { AutomationLogsPanel } from './AutomationLogsPanel';
+import { SimpleClientSearch, type SimpleResultItem } from './SimpleClientSearch';
+import { CurrentClientCard } from './CurrentClientCard';
+import { TodaysFollowUps } from './TodaysFollowUps';
+import { WorkdayPanel } from './WorkdayPanel';
+import { SalesAlerts } from './SalesAlerts';
+import { MessagePreviewEditor } from './MessagePreviewEditor';
+import { PipelinePanel } from './PipelinePanel';
+import { TodaySchedule } from './TodaySchedule';
+import { DemoModal } from './DemoModal';
+import { InstallationModal } from './InstallationModal';
+import { HealthPanel } from './HealthPanel';
+import { ChevronDown, CheckCircle2, Database, Download, FileUp, Loader2, Mail, Pause, Play, Plus, Send, ShieldCheck, Smartphone, Sparkles, Wifi } from 'lucide-react';
 
 type Channel = 'WhatsApp' | 'Email' | 'Ambos';
 type CampaignStatus = 'Borrador' | 'Lista preparada' | 'Enviando' | 'Pausada' | 'Finalizada';
@@ -206,6 +224,26 @@ function AutomationCenter() {
     openwaMessage: 'OpenWA pendiente de revisar.',
     emailMessage: 'Email pendiente de revisar.',
   });
+  const [autoSearch, setAutoSearch] = useState({ rubro: 'Pollería', ciudad: 'Paita', fuente: 'Google Maps', keywords: '' });
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
+  const [automationLogs, setAutomationLogs] = useState(() => getLogs(30));
+  const [simpleInput, setSimpleInput] = useState({ rubro: 'Pollería', ciudad: 'Paita', fuente: 'Google Maps' });
+  const [simpleResults, setSimpleResults] = useState<SimpleResultItem[]>([]);
+  const [simpleMessage, setSimpleMessage] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [currentClient, setCurrentClient] = useState<SimpleResultItem | null>(null);
+  const [currentClientIndex, setCurrentClientIndex] = useState(-1);
+  const [currentClientPgId, setCurrentClientPgId] = useState<string | null>(null);
+  const [dbConnected, setDbConnected] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [nextClientLoading, setNextClientLoading] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editorData, setEditorData] = useState<{ phone: string; msg: string; negocio: string; rubro: string; ciudad: string; contacto: string } | null>(null);
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+
   const runningRef = useRef(false);
   const dailyCounterRef = useRef({ WhatsApp: 0, Email: 0 });
 
@@ -221,7 +259,18 @@ function AutomationCenter() {
   useEffect(() => save(SENDER_CONFIG_KEY, senderConfig), [senderConfig]);
   useEffect(() => {
     void refreshChannelStatus();
+    void checkDbStatus();
   }, []);
+
+  async function checkDbStatus() {
+    try {
+      const res = await fetch('/api/crm/db-status');
+      const data = await res.json();
+      setDbConnected(data.connected === true);
+    } catch {
+      setDbConnected(false);
+    }
+  }
 
   async function refreshChannelStatus() {
     const next: ChannelStatus = {
@@ -341,6 +390,35 @@ function AutomationCenter() {
     return Boolean(prospect && prospect.reviewStatus === 'Aprobado' && !prospect.duplicateReason);
   });
 
+  const generatePersonalizedMessage = (prospect: ImportedProspect, canal: 'WhatsApp' | 'Email'): { message: string; subject?: string } => {
+    const product = (activeCampaign.rubro === 'Ferretería' || activeCampaign.rubro === 'Minimarket') ? 'FERRO' as const : 'RESTO' as const;
+    if (canal === 'WhatsApp') {
+      return {
+        message: generateVariedWhatsAppMessage({
+          negocio: prospect.negocio,
+          rubro: prospect.rubro,
+          ciudad: prospect.ciudad || activeCampaign.zona,
+          contacto: senderConfig.nombreRemitente || 'David',
+          estado: 'Nuevo',
+          channel: 'whatsapp_manual',
+          product,
+        }),
+      };
+    }
+    return {
+      subject: generateVariedEmailSubject({ rubro: prospect.rubro, product }),
+      message: generateVariedEmailBody({
+        negocio: prospect.negocio,
+        rubro: prospect.rubro,
+        ciudad: prospect.ciudad || activeCampaign.zona,
+        contacto: senderConfig.nombreRemitente || 'David',
+        estado: 'Nuevo',
+        channel: 'email',
+        product,
+      }),
+    };
+  };
+
   const sendQueueItem = async (item: QueueItem) => {
     const prospect = prospects.find((entry) => entry.id === item.prospectId);
     if (!prospect) return markQueueError(item, 'Prospecto no encontrado.');
@@ -349,11 +427,12 @@ function AutomationCenter() {
     if (item.canal === 'WhatsApp' && (!prospect.whatsapp || sentToday('WhatsApp') >= activeCampaign.limiteWhatsApp)) return markQueueError(item, 'Falta WhatsApp o límite diario alcanzado.');
     if (item.canal === 'Email' && (!prospect.email || sentToday('Email') >= activeCampaign.limiteEmail)) return markQueueError(item, 'Falta email o límite diario alcanzado.');
 
-    const message = `${activeCampaign.mensajeBase}\n\n${UNSUBSCRIBE}`;
+    const personalized = generatePersonalizedMessage(prospect, item.canal);
+    const message = `${personalized.message}\n\n${UNSUBSCRIBE}`;
     const endpoint = item.canal === 'WhatsApp' ? '/api/whatsapp/send' : '/api/email/send';
     const body = item.canal === 'WhatsApp'
       ? { phone: prospect.whatsapp, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true }
-      : { to: prospect.email, subject: activeCampaign.asuntoEmail, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true, fromName: senderConfig.nombreRemitente, fromEmail: senderConfig.emailRemitente };
+      : { to: prospect.email, subject: personalized.subject || activeCampaign.asuntoEmail, message, mediaUrl: activeCampaign.imagenDemoUrl, prospectId: prospect.id, campaignId: activeCampaign.id, confirmSend: true, fromName: senderConfig.nombreRemitente, fromEmail: senderConfig.emailRemitente };
 
     try {
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -424,6 +503,123 @@ function AutomationCenter() {
     setQueue((current) => current.map((item) => item.campaignId === activeCampaign.id && item.status === 'Pendiente' ? { ...item, status: 'Pausado' } : item));
   };
 
+  const autoSearchProspects = async () => {
+    setSearching(true);
+    setSearchMessage('Buscando...');
+    try {
+      const response = await fetch('/api/prospect-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rubro: autoSearch.rubro || activeCampaign.rubro,
+          zona: autoSearch.ciudad || activeCampaign.zona,
+          maxResults: 10,
+          fuente: autoSearch.fuente || 'Google Maps',
+        }),
+      });
+      const data = await response.json();
+      if (data.results && Array.isArray(data.results)) {
+        const scored = data.results.map((r: SearchResultItem) => ({
+          ...r,
+          score: scoreFromProspect({ telefono: r.telefono, redSocial: r.web, negocio: r.negocio, zona: autoSearch.ciudad, rating: r.rating }),
+        }));
+        setSearchResults(scored);
+        const mode = data.mode === 'demo' ? ' (modo demo)' : '';
+        setSearchMessage(`${scored.length} prospectos encontrados${mode}. Revisa y agrega al CRM.`);
+        addLog('search_performed', `Búsqueda: ${autoSearch.rubro} en ${autoSearch.ciudad} - ${scored.length} resultados${mode}`);
+      } else {
+        setSearchResults([]);
+        setSearchMessage(data.message || 'Sin resultados.');
+      }
+    } catch {
+      setSearchResults([]);
+      setSearchMessage('Error al buscar. Intenta de nuevo.');
+    }
+    setSearching(false);
+  };
+
+  const addSearchResultToCRM = (item: SearchResultItem) => {
+    const phone = normalizePeruPhone(item.telefono);
+    const existingPhones = prospects.map((p) => p.whatsapp.replace(/\D/g, ''));
+    if (phone && existingPhones.includes(phone)) {
+      setSearchMessage(`"${item.negocio}" ya existe en el CRM (teléfono duplicado).`);
+      return;
+    }
+    const links = [item.web, item.googleMapsUrl, item.facebookLink, item.instagramLink, item.tiktokLink].filter(Boolean).join(' | ');
+    const socials = [item.facebookLink && `FB: ${item.facebookLink}`, item.instagramLink && `IG: ${item.instagramLink}`, item.tiktokLink && `TT: ${item.tiktokLink}`].filter(Boolean).join(' | ');
+    addProspects([{
+      id: `search-${Date.now().toString(36)}-${searchResults.indexOf(item)}`,
+      campaignId: activeCampaign.id,
+      negocio: item.negocio,
+      rubro: item.rubro as Rubro,
+      ciudad: autoSearch.ciudad || activeCampaign.zona,
+      whatsapp: phone,
+      email: item.email || '',
+      link: links || item.googleMapsUrl,
+      fuente: item.fuente || autoSearch.fuente,
+      nota: `Rating: ${item.rating || 'N/A'} | ${item.direccion}${socials ? ' | ' + socials : ''}`,
+      reviewStatus: 'Pendiente',
+      createdAt: new Date().toISOString(),
+    }]);
+    addLog('prospect_found', `"${item.negocio}" agregado al CRM desde búsqueda automática`);
+  };
+
+  const addAllSearchResults = () => {
+    let added = 0;
+    for (const item of searchResults) {
+      const phone = normalizePeruPhone(item.telefono);
+      const existingPhones = prospects.map((p) => p.whatsapp.replace(/\D/g, ''));
+      if (!phone || !existingPhones.includes(phone)) {
+        const links = [item.web, item.googleMapsUrl, item.facebookLink, item.instagramLink, item.tiktokLink].filter(Boolean).join(' | ');
+        const socials = [item.facebookLink && `FB: ${item.facebookLink}`, item.instagramLink && `IG: ${item.instagramLink}`, item.tiktokLink && `TT: ${item.tiktokLink}`].filter(Boolean).join(' | ');
+        addProspects([{
+          id: `search-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          campaignId: activeCampaign.id,
+          negocio: item.negocio,
+          rubro: item.rubro as Rubro,
+          ciudad: autoSearch.ciudad || activeCampaign.zona,
+          whatsapp: phone,
+          email: item.email || '',
+          link: links || item.googleMapsUrl,
+          fuente: item.fuente || autoSearch.fuente,
+          nota: `Rating: ${item.rating || 'N/A'} | ${item.direccion}${socials ? ' | ' + socials : ''}`,
+          reviewStatus: 'Pendiente',
+          createdAt: new Date().toISOString(),
+        }]);
+        added++;
+      }
+    }
+    setSearchMessage(`${added} prospectos agregados al CRM.`);
+    if (added > 0) addLog('queue_prepared', `${added} prospectos agregados desde búsqueda automática`);
+  };
+
+  const generateMessagesForCampaign = () => {
+    const contactName = senderConfig.nombreRemitente || 'David';
+    const product = (activeCampaign.rubro === 'Ferretería' || activeCampaign.rubro === 'Minimarket') ? 'FERRO' as const : 'RESTO' as const;
+    const waVariants = [0, 1, 2, 3, 4].map((variantIndex) =>
+      generateVariedWhatsAppMessage({
+        negocio: activeCampaign.rubro,
+        rubro: activeCampaign.rubro,
+        ciudad: activeCampaign.zona,
+        contacto: contactName,
+        estado: 'Nuevo',
+        channel: 'whatsapp_manual',
+        product,
+        variantIndex,
+      }),
+    );
+    const emailSubjectVariants = [0, 1, 2, 3, 4].map(() =>
+      generateVariedEmailSubject({ rubro: activeCampaign.rubro, product }),
+    );
+    const selectedWa = waVariants[Math.floor(Math.random() * waVariants.length)];
+    const selectedEmailSubject = emailSubjectVariants[Math.floor(Math.random() * emailSubjectVariants.length)];
+    updateCampaign({
+      mensajeBase: selectedWa,
+      asuntoEmail: selectedEmailSubject,
+    });
+    addLog('message_generated', `Mensajes variados generados para ${activeCampaign.rubro} en ${activeCampaign.zona}`);
+  };
+
   const exportCampaign = () => {
     csvDownload(`factusys-campana-${activeCampaign.nombre}-${today()}.csv`, [
       ['Negocio', 'Rubro', 'Ciudad', 'WhatsApp', 'Email', 'Link', 'Fuente', 'Revision', 'Nota'],
@@ -431,75 +627,498 @@ function AutomationCenter() {
     ]);
   };
 
+  const refreshLogs = () => {
+    setAutomationLogs(getLogs(30));
+  };
+
+  const enrichSearchResult = async (item: SearchResultItem) => {
+    const result = await enrichProspect(item.negocio, item.rubro, autoSearch.ciudad);
+    if (result.ok) {
+      setSearchResults((prev) => prev.map((r) =>
+        r.id === item.id
+          ? {
+              ...r,
+              email: r.email || result.data.email,
+              facebookLink: r.facebookLink || result.data.facebook,
+              instagramLink: r.instagramLink || result.data.instagram,
+              tiktokLink: r.tiktokLink || result.data.tiktok,
+              web: r.web || result.data.web,
+            }
+          : r,
+      ));
+      setSearchMessage(result.message);
+      addLog('prospect_found', `"${item.negocio}" enriquecido con datos públicos simulados`);
+    }
+  };
+
+  const simpleSearch = async () => {
+    setSearching(true);
+    setSimpleMessage('Buscando...');
+    try {
+      const response = await fetch('/api/prospect-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rubro: simpleInput.rubro, zona: simpleInput.ciudad, maxResults: 10, fuente: simpleInput.fuente }),
+      });
+      const data = await response.json();
+      if (!data.results || !Array.isArray(data.results)) {
+        setSimpleResults([]);
+        setSimpleMessage(data.message || 'Sin resultados.');
+        return;
+      }
+      const enriched: SimpleResultItem[] = [];
+      for (const raw of data.results) {
+        const enrichedData = await enrichProspect(raw.negocio, simpleInput.rubro, simpleInput.ciudad);
+        const item = {
+          ...raw,
+          ciudad: simpleInput.ciudad,
+          email: raw.email || (enrichedData.ok ? enrichedData.data.email : ''),
+          facebookLink: raw.facebookLink || (enrichedData.ok ? enrichedData.data.facebook : ''),
+          instagramLink: raw.instagramLink || (enrichedData.ok ? enrichedData.data.instagram : ''),
+          tiktokLink: raw.tiktokLink || (enrichedData.ok ? enrichedData.data.tiktok : ''),
+          web: raw.web || (enrichedData.ok ? enrichedData.data.web : ''),
+          score: scoreFromProspect({ telefono: raw.telefono, redSocial: raw.web || raw.facebookLink, negocio: raw.negocio, zona: simpleInput.ciudad, rating: raw.rating }),
+        } as SimpleResultItem;
+        const product = (simpleInput.rubro === 'Ferretería' || simpleInput.rubro === 'Minimarket') ? 'FERRO' as const : 'RESTO' as const;
+        const waMessage = generateVariedWhatsAppMessage({
+          negocio: item.negocio,
+          rubro: simpleInput.rubro,
+          ciudad: simpleInput.ciudad,
+          contacto: senderConfig.nombreRemitente || 'David',
+          estado: 'Nuevo',
+          channel: 'whatsapp_manual',
+          product,
+        });
+        enriched.push({ ...item, message: waMessage });
+      }
+      setSimpleResults(enriched);
+      setCurrentClient(enriched[0] || null);
+      setCurrentClientIndex(enriched.length > 0 ? 0 : -1);
+      const mode = data.mode === 'demo' ? ' (modo demo)' : '';
+      setSimpleMessage(`${enriched.length} clientes encontrados${mode}. Mensaje listo para cada uno.`);
+      addLog('search_performed', `Búsqueda simple: ${simpleInput.rubro} en ${simpleInput.ciudad} - ${enriched.length} resultados${mode}`);
+    } catch {
+      setSimpleResults([]);
+      setSimpleMessage('Error al buscar. Intenta de nuevo.');
+    }
+    setSearching(false);
+  };
+
+  const copyMessage = (msg: string) => {
+    navigator.clipboard.writeText(msg).then(() => setSimpleMessage('Mensaje copiado al portapapeles.')).catch(() => setSimpleMessage('No se pudo copiar. Copia manual.'));
+  };
+
+  const openWhatsAppDirect = (phone: string, msg: string) => {
+    const cleaned = phone.replace(/\D/g, '').replace(/^0+/, '');
+    const number = cleaned.startsWith('51') ? cleaned : `51${cleaned}`;
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  const openPreviewWhatsApp = (phone: string, msg: string, negocio: string, rubro: string, ciudad: string, contacto: string) => {
+    setEditorData({ phone, msg, negocio, rubro, ciudad, contacto });
+    setShowEditor(true);
+  };
+
+  const openFacebook = (url: string) => window.open(url, '_blank');
+  const openInstagram = (url: string) => window.open(url, '_blank');
+
+  const saveSimpleToCRM = async (item: SimpleResultItem) => {
+    const phone = normalizePeruPhone(item.telefono);
+    const existingPhones = prospects.map((p) => p.whatsapp.replace(/\D/g, ''));
+    if (phone && existingPhones.includes(phone)) {
+      setSimpleMessage(`"${item.negocio}" ya existe en el CRM.`);
+      return;
+    }
+    const links = [item.web, item.googleMapsUrl, item.facebookLink, item.instagramLink, item.tiktokLink].filter(Boolean).join(' | ');
+    addProspects([{
+      id: `simple-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      campaignId: activeCampaign.id,
+      negocio: item.negocio,
+      rubro: item.rubro as Rubro,
+      ciudad: item.ciudad,
+      whatsapp: phone,
+      email: item.email || '',
+      link: links || item.googleMapsUrl,
+      fuente: item.fuente || simpleInput.fuente,
+      nota: `Score: ${item.score.total}/${item.score.max} (${item.score.label}) | ${item.rubro}${item.googleMapsUrl ? ' | Maps: ' + item.googleMapsUrl : ''}`,
+      reviewStatus: 'Pendiente',
+      createdAt: new Date().toISOString(),
+    }]);
+    setSimpleMessage(`"${item.negocio}" guardado en CRM.`);
+    addLog('prospect_found', `"${item.negocio}" guardado desde buscador simple`);
+    setCurrentClient(item);
+    setCurrentClientIndex(simpleResults.indexOf(item));
+    if (dbConnected) {
+      const result = await saveSimpleToPG(item);
+      if (result.prospectId || result.ok) {
+        setCurrentClientPgId(result.prospectId || null);
+        setSimpleMessage(`"${item.negocio}" guardado en CRM y PostgreSQL.`);
+      }
+    }
+  };
+
+  const saveSimpleToPG = async (item: SimpleResultItem) => {
+    try {
+      const res = await fetch('/api/crm/prospects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', businessName: item.negocio, rubro: item.rubro, ciudad: item.ciudad, phone: normalizePeruPhone(item.telefono), email: item.email || '', score: item.score.total, source: item.fuente || simpleInput.fuente, websiteUrl: item.web || '', facebookUrl: item.facebookLink || '', instagramUrl: item.instagramLink || '', tiktokUrl: item.tiktokLink || '' }),
+      });
+      return await res.json();
+    } catch {
+      return { ok: false, message: 'Error de conexión con PostgreSQL.' };
+    }
+  };
+
+  const updateProspectStatus = async (prospectId: string | undefined, newStatus: string) => {
+    if (!prospectId || !dbConnected) return;
+    if (newStatus === 'NO_CONTACTAR' && !window.confirm('¿Marcar como NO CONTACTAR? Este cliente no recibirá más mensajes automáticos. ¿Continuar?')) return;
+    try {
+      await fetch('/api/crm/prospects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updateStatus', prospectId, status: newStatus }),
+      });
+      setSimpleMessage(`Estado actualizado a "${newStatus}".`);
+      addLog('search_performed', `Prospecto #${prospectId.slice(-6)} → ${newStatus}`);
+    } catch {
+      setSimpleMessage('Error al actualizar estado.');
+    }
+  };
+
+  const nextClient = async () => {
+    if (dbConnected) {
+      setNextClientLoading(true);
+      try {
+        const res = await fetch('/api/crm/prospects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'next' }),
+        });
+        const data = await res.json();
+        if (data.ok && data.prospect) {
+          const p = data.prospect;
+          const product = (p.rubro === 'Ferretería' || p.rubro === 'Minimarket') ? 'FERRO' as const : 'RESTO' as const;
+          const waMessage = generateVariedWhatsAppMessage({
+            negocio: p.business_name,
+            rubro: p.rubro,
+            ciudad: p.ciudad || '',
+            contacto: senderConfig.nombreRemitente || 'David',
+            estado: p.status || 'Nuevo',
+            channel: 'whatsapp_manual',
+            product,
+          });
+          const fakeResultItem: SimpleResultItem = {
+            id: p.id,
+            negocio: p.business_name,
+            rubro: p.rubro,
+            ciudad: p.ciudad,
+            telefono: p.phone,
+            email: p.email || '',
+            web: p.website_url || '',
+            facebookLink: p.facebook_url || '',
+            instagramLink: p.instagram_url || '',
+            tiktokLink: p.tiktok_url || '',
+            rating: p.score || null,
+            googleMapsUrl: p.google_maps_url || '',
+            fuente: p.source || 'PostgreSQL',
+            message: waMessage,
+            score: { total: p.score || 0, max: 100, label: p.temperature || 'FRIO', color: p.temperature === 'CALIENTE' ? '#ef4444' : p.temperature === 'TIBIO' ? '#f59e0b' : '#6b7280' },
+          };
+          setCurrentClient(fakeResultItem);
+          setCurrentClientIndex(-1);
+          setCurrentClientPgId(p.id);
+          setSimpleMessage(`Siguiente cliente: ${p.business_name}`);
+        } else {
+          setSimpleMessage('No hay más clientes pendientes por hoy.');
+          setCurrentClient(null);
+          setCurrentClientIndex(-1);
+          setCurrentClientPgId(null);
+        }
+      } catch {
+        setSimpleMessage('Error al buscar siguiente cliente.');
+      }
+      setNextClientLoading(false);
+      return;
+    }
+    const nextIdx = currentClientIndex + 1;
+    if (nextIdx < simpleResults.length) {
+      setCurrentClient(simpleResults[nextIdx]);
+      setCurrentClientIndex(nextIdx);
+      setCurrentClientPgId(null);
+    } else {
+      setCurrentClient(null);
+      setCurrentClientIndex(-1);
+      setCurrentClientPgId(null);
+      setSimpleMessage('No hay más clientes.');
+    }
+  };
+
+  const sendEmailToClient = async (email: string, msg: string, negocio: string) => {
+    if (!email) return;
+    const product = (simpleInput.rubro === 'Ferretería' || simpleInput.rubro === 'Minimarket') ? 'FERRO' as const : 'RESTO' as const;
+    const subject = generateVariedEmailSubject({ rubro: simpleInput.rubro, product });
+    const fullMsg = `${msg}\n\n${UNSUBSCRIBE}`;
+    const mailto = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fullMsg)}`;
+    window.open(mailto, '_blank');
+    setSimpleMessage(`Correo abierto para ${negocio}.`);
+  };
+
+  const runMigration = async () => {
+    if (!window.confirm('¿Migrar datos de localStorage a PostgreSQL? Los duplicados se omitirán.')) return;
+    setMigrating(true);
+    try {
+      const res = await fetch('/api/crm/migrate', { method: 'POST' });
+      const data = await res.json();
+      setSimpleMessage(`Migración: ${data.imported} importados, ${data.skipped} omitidos, ${data.errors} errores.`);
+      addLog('queue_prepared', `Migración: ${data.imported} importados, ${data.skipped} omitidos, ${data.errors} errores.`);
+    } catch {
+      setSimpleMessage('Error en migración.');
+    }
+    setMigrating(false);
+  };
+
   return (
     <main className="crm-page min-h-screen px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mx-auto max-w-5xl">
+        <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="crm-eyebrow mb-3">Automation Center seguro</p>
-            <h1 className="crm-title">Campañas con revisión y límites</h1>
-            <p className="crm-subtitle mt-3 max-w-3xl">Importa, aprueba y envía uno por uno o en cola controlada. No se envía a rechazados ni a “No contactar”.</p>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">CRM Automation</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white">Ventas diarias FACTUSYS</h1>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <a href="/crm" className="crm-button-secondary justify-center">Volver al CRM</a>
-            <a href="/crm/executive" className="crm-button-secondary justify-center">Ejecutivo</a>
+          <div className="flex gap-2">
+            <a href="/crm" className="rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">CRM</a>
+            <a href="/crm/executive" className="rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Ejecutivo</a>
           </div>
         </header>
 
-        <section className="mb-6 grid gap-5 xl:grid-cols-[420px_1fr]">
-          <SenderConfigPanel
-            config={senderConfig}
-            status={channelStatus}
-            onChange={setSenderConfig}
-            onRefresh={refreshChannelStatus}
+        <section className="mb-8">
+          <WorkdayPanel />
+        </section>
+
+        <section className="mb-8">
+          <PipelinePanel dbConnected={dbConnected} onSelectProspect={(id) => {
+            const found = simpleResults.find((r) => r.id === id);
+            if (found) {
+              setCurrentClient(found);
+              setCurrentClientIndex(simpleResults.indexOf(found));
+              setCurrentClientPgId(id);
+            }
+          }} />
+        </section>
+
+        <section className="mb-8">
+          <TodaySchedule dbConnected={dbConnected} />
+        </section>
+
+        <section className="mb-8">
+          <SimpleClientSearch
+            rubro={simpleInput.rubro}
+            ciudad={simpleInput.ciudad}
+            fuente={simpleInput.fuente}
+            searching={searching}
+            results={simpleResults}
+            message={simpleMessage}
+            rubroOptions={RUBROS}
+            fuenteOptions={['Google Maps', 'Facebook', 'Instagram', 'TikTok', 'Web', 'Todas']}
+            onInputChange={(patch) => setSimpleInput((prev) => ({ ...prev, ...patch }))}
+            onSearch={simpleSearch}
+            onCopyMessage={copyMessage}
+            onOpenWhatsApp={openWhatsAppDirect}
+            onOpenFacebook={openFacebook}
+            onOpenInstagram={openInstagram}
+            onSaveToCRM={saveSimpleToCRM}
           />
-          <div className="crm-card border border-yellow-300/60 bg-yellow-50 p-5 text-yellow-950 dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-100">
-            <p className="crm-eyebrow mb-2 text-yellow-700 dark:text-yellow-200">Alerta importante</p>
-            <h2 className="crm-section-title text-yellow-950 dark:text-yellow-50">Para envio real configura OPENWA_API_URL, OPENWA_API_KEY y SMTP.</h2>
-            <p className="mt-2 text-sm">
-              Si falta OpenWA o SMTP, FACTUSYS registrara el intento como modo simulacion. No se fingira que fue enviado real.
-            </p>
-            <div className="mt-4 grid gap-2 md:grid-cols-3">
-              <StatusPill label="WhatsApp manual listo" ready />
-              <StatusPill label={`OpenWA ${channelStatus.openwa === 'connected' ? 'conectado' : 'simulado'}`} ready={channelStatus.openwa === 'connected'} />
-              <StatusPill label={`Email ${channelStatus.email === 'configured' ? 'configurado' : 'simulado'}`} ready={channelStatus.email === 'configured'} />
+        </section>
+
+        {currentClient && (
+          <section className="mb-8">
+            <CurrentClientCard
+              client={{
+                id: currentClientPgId || undefined,
+                negocio: currentClient.negocio,
+                rubro: currentClient.rubro,
+                ciudad: currentClient.ciudad,
+                telefono: currentClient.telefono,
+                email: currentClient.email,
+                facebookLink: currentClient.facebookLink,
+                instagramLink: currentClient.instagramLink,
+                tiktokLink: currentClient.tiktokLink,
+                web: currentClient.web,
+                message: currentClient.message,
+                score: currentClient.score,
+              }}
+              dbConnected={dbConnected}
+              onCopyMessage={copyMessage}
+              onOpenWhatsApp={openWhatsAppDirect}
+              onPreviewWhatsApp={openPreviewWhatsApp}
+              onOpenFacebook={openFacebook}
+              onOpenInstagram={openInstagram}
+              onUpdateStatus={updateProspectStatus}
+               onNextClient={nextClient}
+               onNextClientLoading={nextClientLoading}
+               onSendEmail={sendEmailToClient}
+               onScheduleDemo={(id) => { setCurrentClientPgId(id || null); setShowDemoModal(true); }}
+               onScheduleInstallation={(id) => { setCurrentClientPgId(id || null); setShowInstallModal(true); }}
+            />
+          </section>
+        )}
+
+        <section className="mb-8">
+          <SalesAlerts dbConnected={dbConnected} />
+        </section>
+
+        <section className="mb-8">
+          <TodaysFollowUps dbConnected={dbConnected} />
+        </section>
+
+        <div className="mb-8">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded-2xl border-2 border-slate-200 bg-white px-6 py-4 text-left transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+            onClick={() => setAdvancedOpen((prev) => !prev)}
+          >
+            <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Configuración avanzada</span>
+            <ChevronDown size={18} className={`text-slate-400 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {advancedOpen && (
+            <div className="mt-4 space-y-6">
+              <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
+                <SenderConfigPanel
+                  config={senderConfig}
+                  status={channelStatus}
+                  onChange={setSenderConfig}
+                  onRefresh={refreshChannelStatus}
+                />
+                <div className="crm-card border border-yellow-300/60 bg-yellow-50 p-5 text-yellow-950 dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-100">
+                  <p className="crm-eyebrow mb-2 text-yellow-700 dark:text-yellow-200">Alerta importante</p>
+                  <h2 className="crm-section-title text-yellow-950 dark:text-yellow-50">Para envio real configura OPENWA_API_URL, OPENWA_API_KEY y SMTP.</h2>
+                  <p className="mt-2 text-sm">
+                    Si falta OpenWA o SMTP, FACTUSYS registrara el intento como modo simulacion. No se fingira que fue enviado real.
+                  </p>
+                  <div className="mt-4 grid gap-2 md:grid-cols-3">
+                    <StatusPill label="WhatsApp manual listo" ready />
+                    <StatusPill label={`OpenWA ${channelStatus.openwa === 'connected' ? 'conectado' : 'simulado'}`} ready={channelStatus.openwa === 'connected'} />
+                    <StatusPill label={`Email ${channelStatus.email === 'configured' ? 'configurado' : 'simulado'}`} ready={channelStatus.email === 'configured'} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
+                <div className="crm-card p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h2 className="crm-section-title">Campañas</h2>
+                    <button type="button" className="crm-button-secondary min-h-0 px-3 py-2 text-xs" onClick={addCampaign}><Plus size={14} />Nueva</button>
+                  </div>
+                  <select className="crm-input mb-3" value={activeCampaign.id} onChange={(event) => {
+                    const newId = event.target.value;
+                    const newCampaign = campaigns.find((c) => c.id === newId);
+                    setActiveCampaignId(newId);
+                    if (newCampaign) setAutoSearch((prev) => ({ ...prev, rubro: newCampaign.rubro, ciudad: newCampaign.zona }));
+                  }}>
+                    {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.nombre}</option>)}
+                  </select>
+                  <CampaignEditor campaign={activeCampaign} onChange={updateCampaign} onGenerateMessages={generateMessagesForCampaign} />
+                </div>
+
+                <div className="grid gap-5">
+                  <DashboardCards dashboard={dashboard} queue={campaignQueue} />
+                  <ImportPanel importText={importText} setImportText={setImportText} importProspects={importProspects} manual={manual} setManual={setManual} addManual={addManual} />
+                </div>
+              </section>
+
+              <section>
+                <AutoSearchPanel
+                  rubro={autoSearch.rubro}
+                  ciudad={autoSearch.ciudad}
+                  fuente={autoSearch.fuente}
+                  keywords={autoSearch.keywords}
+                  searching={searching}
+                  searchMessage={searchMessage}
+                  searchResults={searchResults}
+                  activeRubros={RUBROS}
+                  onSearchChange={(patch) => setAutoSearch((prev) => ({ ...prev, ...patch }))}
+                  onSearch={autoSearchProspects}
+                  onAddResult={addSearchResultToCRM}
+                  onAddAll={addAllSearchResults}
+                  onGenerateMessages={generateMessagesForCampaign}
+                  onEnrichItem={enrichSearchResult}
+                />
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+                <ReviewPanel prospects={campaignProspects} onReview={setReview} />
+                <QueuePanel queue={campaignQueue} onPrepare={prepareQueue} onSendNext={sendNext} onStart={startQueue} onPause={pauseQueue} isRunning={isRunning} />
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+                <HistoryPanel history={campaignHistory} />
+                <div className="crm-card p-5">
+                  <p className="crm-eyebrow mb-2">Exportar campaña</p>
+                  <h2 className="crm-section-title">CSV / Excel</h2>
+                  <p className="crm-muted mt-1 text-sm">Exporta prospectos, revisión y notas para respaldo.</p>
+                  <button type="button" className="crm-button-primary mt-4 w-full justify-center" onClick={exportCampaign}><Download size={16} />Exportar campaña</button>
+                </div>
+                <div className="crm-card p-5">
+                  <p className="crm-eyebrow mb-2">Base de datos</p>
+                  <h2 className="crm-section-title">PostgreSQL</h2>
+                  <p className="crm-muted mt-1 text-sm">{dbConnected ? 'Conectado.' : 'Desconectado. Configura DATABASE_URL.'}</p>
+                  <button type="button" className="crm-button-primary mt-4 w-full justify-center disabled:opacity-50" onClick={runMigration} disabled={!dbConnected || migrating}>
+                    {migrating ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+                    {migrating ? 'Migrando...' : 'Migrar localStorage → PostgreSQL'}
+                  </button>
+                </div>
+              </section>
+
+              <section>
+                <HealthPanel dbConnected={dbConnected} />
+              </section>
+
+              <section>
+                <AutomationLogsPanel logs={automationLogs} onRefresh={refreshLogs} />
+              </section>
             </div>
-          </div>
-        </section>
-
-        <section className="mb-6 grid gap-5 xl:grid-cols-[420px_1fr]">
-          <div className="crm-card p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="crm-section-title">Campañas</h2>
-              <button type="button" className="crm-button-secondary min-h-0 px-3 py-2 text-xs" onClick={addCampaign}><Plus size={14} />Nueva</button>
-            </div>
-            <select className="crm-input mb-3" value={activeCampaign.id} onChange={(event) => setActiveCampaignId(event.target.value)}>
-              {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.nombre}</option>)}
-            </select>
-            <CampaignEditor campaign={activeCampaign} onChange={updateCampaign} />
-          </div>
-
-          <div className="grid gap-5">
-            <DashboardCards dashboard={dashboard} queue={campaignQueue} />
-            <ImportPanel importText={importText} setImportText={setImportText} importProspects={importProspects} manual={manual} setManual={setManual} addManual={addManual} />
-          </div>
-        </section>
-
-        <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
-          <ReviewPanel prospects={campaignProspects} onReview={setReview} />
-          <QueuePanel queue={campaignQueue} onPrepare={prepareQueue} onSendNext={sendNext} onStart={startQueue} onPause={pauseQueue} isRunning={isRunning} />
-        </section>
-
-        <section className="mb-6 grid gap-5 xl:grid-cols-[1fr_420px]">
-          <HistoryPanel history={campaignHistory} />
-          <div className="crm-card p-5">
-            <p className="crm-eyebrow mb-2">Exportar campaña</p>
-            <h2 className="crm-section-title">CSV / Excel</h2>
-            <p className="crm-muted mt-1 text-sm">Exporta prospectos, revisión y notas para respaldo.</p>
-            <button type="button" className="crm-button-primary mt-4 w-full justify-center" onClick={exportCampaign}><Download size={16} />Exportar campaña</button>
-          </div>
-        </section>
+          )}
+        </div>
       </div>
+
+      {showEditor && editorData && (
+        <MessagePreviewEditor
+          negocio={editorData.negocio}
+          rubro={editorData.rubro}
+          ciudad={editorData.ciudad}
+          contacto={editorData.contacto}
+          phone={editorData.phone}
+          product={(editorData.rubro === 'Ferretería' || editorData.rubro === 'Minimarket') ? 'FERRO' : 'RESTO'}
+          onClose={() => { setShowEditor(false); setEditorData(null); }}
+        />
+      )}
+
+      {showDemoModal && currentClient && (
+        <DemoModal
+          prospectId={currentClientPgId || currentClient.id}
+          businessName={currentClient.negocio}
+          onClose={() => setShowDemoModal(false)}
+          onCreated={(pid) => {
+            setShowDemoModal(false);
+            setSimpleMessage(`Demo agendada para ${currentClient.negocio}.`);
+            if (pid) { updateProspectStatus(pid, 'DEMO_AGENDADA'); }
+          }}
+        />
+      )}
+
+      {showInstallModal && currentClient && (
+        <InstallationModal
+          prospectId={currentClientPgId || currentClient.id}
+          businessName={currentClient.negocio}
+          onClose={() => setShowInstallModal(false)}
+          onCreated={(pid) => {
+            setShowInstallModal(false);
+            setSimpleMessage(`Instalación creada para ${currentClient.negocio}.`);
+            if (pid) { updateProspectStatus(pid, 'INSTALACION'); }
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -570,7 +1189,7 @@ function StatusPill({ label, ready }: { label: string; ready: boolean }) {
   );
 }
 
-function CampaignEditor({ campaign, onChange }: { campaign: Campaign; onChange: (patch: Partial<Campaign>) => void }) {
+function CampaignEditor({ campaign, onChange, onGenerateMessages }: { campaign: Campaign; onChange: (patch: Partial<Campaign>) => void; onGenerateMessages?: () => void }) {
   return (
     <div className="space-y-3">
       <input className="crm-input" value={campaign.nombre} onChange={(event) => onChange({ nombre: event.target.value })} placeholder="Nombre" />
@@ -585,6 +1204,11 @@ function CampaignEditor({ campaign, onChange }: { campaign: Campaign; onChange: 
         <input className="crm-input" type="number" value={campaign.limiteEmail} onChange={(event) => onChange({ limiteEmail: Number(event.target.value || 30) })} />
       </div>
       <select className="crm-input" value={campaign.estado} onChange={(event) => onChange({ estado: event.target.value as CampaignStatus })}>{['Borrador', 'Lista preparada', 'Enviando', 'Pausada', 'Finalizada'].map((item) => <option key={item}>{item}</option>)}</select>
+      {onGenerateMessages && (
+        <button type="button" className="crm-button-primary w-full justify-center" onClick={onGenerateMessages}>
+          <Sparkles size={14} /> Generar mensajes automáticos
+        </button>
+      )}
       <p className="crm-note text-xs"><ShieldCheck size={14} className="inline text-neon" /> Baja obligatoria: “{UNSUBSCRIBE}”</p>
     </div>
   );

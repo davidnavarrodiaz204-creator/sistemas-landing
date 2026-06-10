@@ -4,6 +4,7 @@ export type ProspectSearchInput = {
   rubro: string;
   zona: string;
   maxResults: number;
+  fuente?: string;
 };
 
 export type ProspectSearchResult = {
@@ -12,7 +13,11 @@ export type ProspectSearchResult = {
   rubro: string;
   direccion: string;
   telefono: string;
+  email: string;
   web: string;
+  facebookLink: string;
+  instagramLink: string;
+  tiktokLink: string;
   rating: number | null;
   googleMapsUrl: string;
   fuente: string;
