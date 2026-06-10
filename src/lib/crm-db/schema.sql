@@ -60,8 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_automation_logs_created ON automation_logs(create
 CREATE INDEX IF NOT EXISTS idx_prospects_next_follow_up ON prospects(next_follow_up_at) WHERE next_follow_up_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_prospects_created ON prospects(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_type ON follow_ups(type);
-CREATE INDEX IF NOT EXISTS idx_demos_status ON demos(status);
-CREATE INDEX IF NOT EXISTS idx_installations_status ON installations(status);
 CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS workdays (
@@ -88,6 +86,7 @@ CREATE TABLE IF NOT EXISTS demos (
 );
 CREATE INDEX IF NOT EXISTS idx_demos_prospect ON demos(prospect_id);
 CREATE INDEX IF NOT EXISTS idx_demos_scheduled ON demos(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_demos_status ON demos(status);
 
 CREATE TABLE IF NOT EXISTS installations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,6 +104,7 @@ CREATE TABLE IF NOT EXISTS installations (
 );
 CREATE INDEX IF NOT EXISTS idx_installations_prospect ON installations(prospect_id);
 CREATE INDEX IF NOT EXISTS idx_installations_scheduled ON installations(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_installations_status ON installations(status);
 
 CREATE TABLE IF NOT EXISTS crm_inbox_threads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

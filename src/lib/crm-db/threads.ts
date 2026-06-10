@@ -1,4 +1,5 @@
-import { query } from './db';
+import { getDb } from './db';
+import crypto from 'crypto';
 
 export type DbInboxThread = {
   id: string;
@@ -28,73 +29,119 @@ export type ThreadWithProspect = DbInboxThread & {
 };
 
 export async function createThread(input: CreateThreadInput): Promise<DbInboxThread | null> {
-  const result = await query(
-    `INSERT INTO crm_inbox_threads (prospect_id, channel, external_thread_id, contact_name, contact_handle)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [input.prospectId || null, input.channel, input.externalThreadId || '', input.contactName || '', input.contactHandle || ''],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const doc: DbInboxThread = {
+    id: crypto.randomUUID(),
+    prospect_id: input.prospectId || null,
+    channel: input.channel,
+    external_thread_id: input.externalThreadId || '',
+    contact_name: input.contactName || '',
+    contact_handle: input.contactHandle || '',
+    status: 'OPEN',
+    last_message_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  await db.collection('crm_inbox_threads').insertOne(doc);
+  return doc;
 }
 
 export async function getThreadById(id: string): Promise<DbInboxThread | null> {
-  const result = await query('SELECT * FROM crm_inbox_threads WHERE id = $1', [id]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc = await db.collection<DbInboxThread>('crm_inbox_threads').findOne({ id });
+  return doc || null;
 }
 
 export async function getThreadsForProspect(prospectId: string): Promise<DbInboxThread[]> {
-  const result = await query('SELECT * FROM crm_inbox_threads WHERE prospect_id = $1 ORDER BY last_message_at DESC NULLS LAST', [prospectId]);
-  return result?.rows || [];
+  const db = await getDb();
+  const docs = await db.collection<DbInboxThread>('crm_inbox_threads')
+    .find({ prospect_id: prospectId })
+    .sort({ last_message_at: -1 })
+    .toArray();
+  return docs;
 }
 
 export async function getOpenThreads(): Promise<ThreadWithProspect[]> {
-  const result = await query(
-    `SELECT t.*, p.business_name, p.rubro, p.phone
-     FROM crm_inbox_threads t LEFT JOIN prospects p ON p.id = t.prospect_id
-     WHERE t.status IN ('OPEN','PENDING')
-     ORDER BY t.last_message_at DESC NULLS LAST LIMIT 50`,
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  const docs = await db.collection('crm_inbox_threads').aggregate([
+    { $match: { status: { $in: ['OPEN', 'PENDING'] } } },
+    {
+      $lookup: {
+        from: 'prospects',
+        localField: 'prospect_id',
+        foreignField: 'id',
+        as: 'prospect',
+      },
+    },
+    { $unwind: { path: '$prospect', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        business_name: '$prospect.business_name',
+        rubro: '$prospect.rubro',
+        phone: '$prospect.phone',
+      },
+    },
+    { $project: { prospect: 0 } },
+    { $sort: { last_message_at: -1 } },
+    { $limit: 50 },
+  ]).toArray();
+  return docs as unknown as ThreadWithProspect[];
 }
 
 export async function getThreadsByChannel(channel: string): Promise<ThreadWithProspect[]> {
-  const result = await query(
-    `SELECT t.*, p.business_name, p.rubro, p.phone
-     FROM crm_inbox_threads t LEFT JOIN prospects p ON p.id = t.prospect_id
-     WHERE t.channel = $1 AND t.status IN ('OPEN','PENDING')
-     ORDER BY t.last_message_at DESC NULLS LAST`,
-    [channel],
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  const docs = await db.collection('crm_inbox_threads').aggregate([
+    { $match: { channel, status: { $in: ['OPEN', 'PENDING'] } } },
+    {
+      $lookup: {
+        from: 'prospects',
+        localField: 'prospect_id',
+        foreignField: 'id',
+        as: 'prospect',
+      },
+    },
+    { $unwind: { path: '$prospect', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        business_name: '$prospect.business_name',
+        rubro: '$prospect.rubro',
+        phone: '$prospect.phone',
+      },
+    },
+    { $project: { prospect: 0 } },
+    { $sort: { last_message_at: -1 } },
+  ]).toArray();
+  return docs as unknown as ThreadWithProspect[];
 }
 
 export async function findOrCreateThread(input: CreateThreadInput & { externalThreadId: string }): Promise<DbInboxThread> {
-  const existing = await query(
-    `SELECT * FROM crm_inbox_threads WHERE channel = $1 AND external_thread_id = $2 LIMIT 1`,
-    [input.channel, input.externalThreadId],
-  );
-  if (existing?.rows?.[0]) return existing.rows[0];
+  const db = await getDb();
+  const existing = await db.collection<DbInboxThread>('crm_inbox_threads').findOne({
+    channel: input.channel,
+    external_thread_id: input.externalThreadId,
+  });
+  if (existing) return existing;
   const created = await createThread(input);
   return created!;
 }
 
 export async function updateThread(id: string, updates: Record<string, unknown>): Promise<DbInboxThread | null> {
+  const db = await getDb();
   const keys = Object.keys(updates);
   if (!keys.length) return null;
-  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const values = keys.map((k) => updates[k]);
-  const result = await query(
-    `UPDATE crm_inbox_threads SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-    [id, ...values],
-  );
-  return result?.rows?.[0] || null;
+  const setFields: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+  await db.collection('crm_inbox_threads').updateOne({ id }, { $set: setFields });
+  const doc = await db.collection<DbInboxThread>('crm_inbox_threads').findOne({ id });
+  return doc || null;
 }
 
 export async function getThreadCount(): Promise<number> {
-  const result = await query('SELECT COUNT(*) FROM crm_inbox_threads', []);
-  return result?.rows?.[0]?.count || 0;
+  const db = await getDb();
+  return db.collection('crm_inbox_threads').countDocuments();
 }
 
 export async function getPendingThreadCount(): Promise<number> {
-  const result = await query("SELECT COUNT(*) FROM crm_inbox_threads WHERE status IN ('OPEN','PENDING')", []);
-  return result?.rows?.[0]?.count || 0;
+  const db = await getDb();
+  return db.collection('crm_inbox_threads').countDocuments({ status: { $in: ['OPEN', 'PENDING'] } });
 }

@@ -1,4 +1,5 @@
-import { query } from './db';
+import { getDb } from './db';
+import { randomUUID } from 'crypto';
 
 export type DbProspect = {
   id: string;
@@ -43,26 +44,41 @@ export type CreateProspectInput = {
 };
 
 export async function createProspect(input: CreateProspectInput): Promise<DbProspect | null> {
-  const result = await query(
-    `INSERT INTO prospects (business_name, rubro, ciudad, zona, phone, email, facebook_url, instagram_url, tiktok_url, website_url, google_maps_url, source, score, temperature, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-     RETURNING *`,
-    [
-      input.businessName, input.rubro, input.ciudad, input.zona || '',
-      input.phone || '', input.email || '', input.facebookUrl || '',
-      input.instagramUrl || '', input.tiktokUrl || '', input.websiteUrl || '',
-      input.googleMapsUrl || '', input.source || 'simple', input.score || 0,
-      input.temperature || 'FRIO', input.notes || '',
-    ],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const doc = {
+    id: randomUUID(),
+    business_name: input.businessName,
+    rubro: input.rubro,
+    ciudad: input.ciudad,
+    zona: input.zona || '',
+    phone: input.phone || '',
+    email: input.email || '',
+    facebook_url: input.facebookUrl || '',
+    instagram_url: input.instagramUrl || '',
+    tiktok_url: input.tiktokUrl || '',
+    website_url: input.websiteUrl || '',
+    google_maps_url: input.googleMapsUrl || '',
+    source: input.source || 'simple',
+    score: input.score || 0,
+    temperature: input.temperature || 'FRIO',
+    status: 'NUEVO',
+    last_contact_at: null,
+    next_follow_up_at: null,
+    notes: input.notes || '',
+    created_at: now,
+    updated_at: now,
+  };
+  await db.collection('prospects').insertOne(doc);
+  return doc as unknown as DbProspect;
 }
 
 export async function findProspectByPhone(phone: string): Promise<DbProspect | null> {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return null;
-  const result = await query('SELECT * FROM prospects WHERE phone = $1 LIMIT 1', [clean]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc = await db.collection('prospects').findOne({ phone: clean });
+  return doc as unknown as DbProspect | null;
 }
 
 export async function findProspects(params: {
@@ -72,59 +88,102 @@ export async function findProspects(params: {
   limit?: number;
   offset?: number;
 }): Promise<DbProspect[]> {
-  const conditions: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-  if (params.rubro) { conditions.push(`rubro = $${idx++}`); values.push(params.rubro); }
-  if (params.ciudad) { conditions.push(`ciudad ILIKE $${idx++}`); values.push(`%${params.ciudad}%`); }
-  if (params.status) { conditions.push(`status = $${idx++}`); values.push(params.status); }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const filter: Record<string, unknown> = {};
+  if (params.rubro) filter.rubro = params.rubro;
+  if (params.ciudad) filter.ciudad = { $regex: params.ciudad, $options: 'i' };
+  if (params.status) filter.status = params.status;
   const limit = Math.min(Math.max(params.limit || 20, 1), 100);
   const offset = Math.max(params.offset || 0, 0);
-  const sql = `SELECT * FROM prospects ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`;
-  const result = await query(sql, [...values, limit, offset]);
-  return result?.rows || [];
+  const db = await getDb();
+  const docs = await db.collection('prospects')
+    .find(filter)
+    .sort({ created_at: -1 })
+    .skip(offset)
+    .limit(limit)
+    .toArray();
+  return docs as unknown as DbProspect[];
 }
 
 export async function getProspectById(id: string): Promise<DbProspect | null> {
-  const result = await query('SELECT * FROM prospects WHERE id = $1', [id]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc = await db.collection('prospects').findOne({ id });
+  return doc as unknown as DbProspect | null;
 }
 
 export async function updateProspect(id: string, updates: Record<string, unknown>): Promise<DbProspect | null> {
   const keys = Object.keys(updates);
   if (!keys.length) return null;
-  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const values = keys.map((k) => updates[k]);
-  const result = await query(
-    `UPDATE prospects SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-    [id, ...values],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const setFields: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+  await db.collection('prospects').updateOne({ id }, { $set: setFields });
+  const doc = await db.collection('prospects').findOne({ id });
+  return doc as unknown as DbProspect | null;
 }
 
 export async function getProspectsNeedingFollowUp(): Promise<DbProspect[]> {
-  const result = await query(
-    `SELECT * FROM prospects WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW() AND status != 'NO_CONTACTAR' ORDER BY next_follow_up_at ASC LIMIT 20`,
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const docs = await db.collection('prospects')
+    .find({
+      next_follow_up_at: { $ne: null, $lte: now },
+      status: { $ne: 'NO_CONTACTAR' },
+    })
+    .sort({ next_follow_up_at: 1 })
+    .limit(20)
+    .toArray();
+  return docs as unknown as DbProspect[];
 }
 
 export async function getNextProspect(): Promise<DbProspect | null> {
-  const result = await query(
-    `SELECT * FROM prospects
-     WHERE status NOT IN ('NO_CONTACTAR', 'PRODUCCION', 'INSTALACION')
-       AND (last_contact_at IS NULL OR last_contact_at::date < CURRENT_DATE)
-     ORDER BY
-       CASE WHEN next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW() THEN 0 ELSE 1 END,
-       CASE temperature WHEN 'CALIENTE' THEN 0 WHEN 'TIBIO' THEN 1 WHEN 'FRIO' THEN 2 ELSE 3 END,
-       score DESC NULLS LAST
-     LIMIT 1`,
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const todayStart = new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z';
+
+  const pipeline = [
+    {
+      $match: {
+        status: { $nin: ['NO_CONTACTAR', 'PRODUCCION', 'INSTALACION'] },
+        $or: [
+          { last_contact_at: null },
+          { last_contact_at: { $lt: todayStart } },
+        ],
+      },
+    },
+    {
+      $addFields: {
+        sort_followup: {
+          $cond: {
+            if: {
+              $and: [
+                { $ne: ['$next_follow_up_at', null] },
+                { $lte: ['$next_follow_up_at', now] },
+              ],
+            },
+            then: 0,
+            else: 1,
+          },
+        },
+        sort_temperature: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$temperature', 'CALIENTE'] }, then: 0 },
+              { case: { $eq: ['$temperature', 'TIBIO'] }, then: 1 },
+              { case: { $eq: ['$temperature', 'FRIO'] }, then: 2 },
+            ],
+            default: 3,
+          },
+        },
+      },
+    },
+    { $sort: { sort_followup: 1, sort_temperature: 1, score: -1 } },
+    { $limit: 1 },
+  ];
+
+  const results = await db.collection('prospects').aggregate(pipeline).toArray();
+  return (results[0] as unknown as DbProspect) || null;
 }
 
 export async function getProspectCount(): Promise<number> {
-  const result = await query('SELECT COUNT(*) AS count FROM prospects');
-  return result?.rows?.[0]?.count || 0;
+  const db = await getDb();
+  return await db.collection('prospects').countDocuments({});
 }

@@ -1,4 +1,5 @@
-import { query } from './db';
+import { getDb } from './db';
+import { randomUUID } from 'crypto';
 
 export type DbInboxMessage = {
   id: string;
@@ -21,55 +22,73 @@ export type CreateMessageInput = {
 };
 
 export async function createMessage(input: CreateMessageInput): Promise<DbInboxMessage | null> {
-  const result = await query(
-    `INSERT INTO crm_inbox_messages (thread_id, direction, body, intent, suggested_reply)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [input.threadId, input.direction, input.body, input.intent || '', input.suggestedReply || ''],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc: DbInboxMessage = {
+    id: randomUUID(),
+    thread_id: input.threadId,
+    direction: input.direction,
+    body: input.body,
+    intent: input.intent || '',
+    suggested_reply: input.suggestedReply || '',
+    approved_at: null,
+    sent_at: null,
+    created_at: new Date().toISOString(),
+  };
+  await db.collection<DbInboxMessage>('crm_inbox_messages').insertOne(doc);
+  return doc;
 }
 
 export async function getMessagesForThread(threadId: string): Promise<DbInboxMessage[]> {
-  const result = await query(
-    'SELECT * FROM crm_inbox_messages WHERE thread_id = $1 ORDER BY created_at ASC',
-    [threadId],
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  return db.collection<DbInboxMessage>('crm_inbox_messages')
+    .find({ thread_id: threadId })
+    .sort({ created_at: 1 })
+    .toArray();
 }
 
 export async function getMessageById(id: string): Promise<DbInboxMessage | null> {
-  const result = await query('SELECT * FROM crm_inbox_messages WHERE id = $1', [id]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc = await db.collection<DbInboxMessage>('crm_inbox_messages').findOne({ id });
+  return doc || null;
 }
 
 export async function approveMessage(id: string): Promise<DbInboxMessage | null> {
-  const result = await query(
-    'UPDATE crm_inbox_messages SET approved_at = NOW() WHERE id = $1 RETURNING *',
-    [id],
+  const db = await getDb();
+  return db.collection<DbInboxMessage>('crm_inbox_messages').findOneAndUpdate(
+    { id },
+    { $set: { approved_at: new Date().toISOString() } },
+    { returnDocument: 'after' },
   );
-  return result?.rows?.[0] || null;
 }
 
 export async function markMessageSent(id: string): Promise<DbInboxMessage | null> {
-  const result = await query(
-    'UPDATE crm_inbox_messages SET sent_at = NOW() WHERE id = $1 RETURNING *',
-    [id],
+  const db = await getDb();
+  return db.collection<DbInboxMessage>('crm_inbox_messages').findOneAndUpdate(
+    { id },
+    { $set: { sent_at: new Date().toISOString() } },
+    { returnDocument: 'after' },
   );
-  return result?.rows?.[0] || null;
 }
 
 export async function getUnapprovedMessages(threadId: string): Promise<DbInboxMessage[]> {
-  const result = await query(
-    `SELECT * FROM crm_inbox_messages WHERE thread_id = $1 AND direction = 'INBOUND' AND approved_at IS NULL AND intent != '' ORDER BY created_at DESC`,
-    [threadId],
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  return db.collection<DbInboxMessage>('crm_inbox_messages')
+    .find({
+      thread_id: threadId,
+      direction: 'INBOUND',
+      approved_at: null,
+      intent: { $ne: '' },
+    })
+    .sort({ created_at: -1 })
+    .toArray();
 }
 
 export async function getLastMessageForThread(threadId: string): Promise<DbInboxMessage | null> {
-  const result = await query(
-    'SELECT * FROM crm_inbox_messages WHERE thread_id = $1 ORDER BY created_at DESC LIMIT 1',
-    [threadId],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const docs = await db.collection<DbInboxMessage>('crm_inbox_messages')
+    .find({ thread_id: threadId })
+    .sort({ created_at: -1 })
+    .limit(1)
+    .toArray();
+  return docs[0] || null;
 }

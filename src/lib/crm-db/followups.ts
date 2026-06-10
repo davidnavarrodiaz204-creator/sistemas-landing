@@ -1,4 +1,5 @@
-import { query } from './db';
+import { getDb } from './db';
+import { randomUUID } from 'crypto';
 
 export type DbFollowUp = {
   id: string;
@@ -18,16 +19,27 @@ export type CreateFollowUpInput = {
 };
 
 export async function createFollowUp(input: CreateFollowUpInput): Promise<DbFollowUp | null> {
-  const result = await query(
-    `INSERT INTO follow_ups (prospect_id, type, note, due_date) VALUES ($1,$2,$3,$4) RETURNING *`,
-    [input.prospectId, input.type, input.note || '', input.dueDate || null],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc: DbFollowUp = {
+    id: randomUUID(),
+    prospect_id: input.prospectId,
+    type: input.type,
+    note: input.note || '',
+    due_date: input.dueDate || null,
+    done_at: null,
+    created_at: new Date().toISOString(),
+  };
+  await db.collection<DbFollowUp>('follow_ups').insertOne(doc);
+  return doc;
 }
 
 export async function getFollowUpsForProspect(prospectId: string): Promise<DbFollowUp[]> {
-  const result = await query('SELECT * FROM follow_ups WHERE prospect_id = $1 ORDER BY created_at DESC', [prospectId]);
-  return result?.rows || [];
+  const db = await getDb();
+  return db
+    .collection<DbFollowUp>('follow_ups')
+    .find({ prospect_id: prospectId })
+    .sort({ created_at: -1 })
+    .toArray();
 }
 
 export type FollowUpWithProspect = DbFollowUp & {
@@ -41,35 +53,61 @@ export type FollowUpWithProspect = DbFollowUp & {
 };
 
 export async function getTodayFollowUps(): Promise<FollowUpWithProspect[]> {
-  const result = await query(
-    `SELECT f.*, p.business_name, p.phone, p.rubro, p.ciudad, p.temperature, p.status, p.score
-     FROM follow_ups f
-     JOIN prospects p ON p.id = f.prospect_id
-     WHERE f.done_at IS NULL AND f.due_date <= NOW() + INTERVAL '1 day'
-     ORDER BY f.due_date ASC NULLS LAST, f.created_at ASC
-     LIMIT 20`,
-  );
-  return result?.rows || [];
+  const db = await getDb();
+  const tomorrow = new Date(Date.now() + 86400000).toISOString();
+  const pipeline = [
+    { $match: { done_at: null, due_date: { $lte: tomorrow } } },
+    {
+      $lookup: {
+        from: 'prospects',
+        localField: 'prospect_id',
+        foreignField: 'id',
+        as: 'prospect',
+      },
+    },
+    { $unwind: '$prospect' },
+    { $addFields: { due_date_null: { $cond: [{ $eq: ['$due_date', null] }, 1, 0] } } },
+    { $sort: { due_date_null: 1, due_date: 1, created_at: 1 } },
+    { $limit: 20 },
+    {
+      $addFields: {
+        business_name: '$prospect.business_name',
+        phone: '$prospect.phone',
+        rubro: '$prospect.rubro',
+        ciudad: '$prospect.ciudad',
+        temperature: '$prospect.temperature',
+        status: '$prospect.status',
+        score: '$prospect.score',
+      },
+    },
+    { $project: { prospect: 0, due_date_null: 0 } },
+  ];
+  return db
+    .collection<DbFollowUp>('follow_ups')
+    .aggregate<FollowUpWithProspect>(pipeline)
+    .toArray();
 }
 
 export async function markFollowUpDone(id: string): Promise<DbFollowUp | null> {
-  const result = await query('UPDATE follow_ups SET done_at = NOW() WHERE id = $1 RETURNING *', [id]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  return db.collection<DbFollowUp>('follow_ups').findOneAndUpdate(
+    { id },
+    { $set: { done_at: new Date().toISOString() } },
+    { returnDocument: 'after' },
+  );
 }
 
 export async function updateFollowUp(id: string, updates: Record<string, unknown>): Promise<DbFollowUp | null> {
-  const keys = Object.keys(updates);
-  if (!keys.length) return null;
-  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const values = keys.map((k) => updates[k]);
-  const result = await query(
-    `UPDATE follow_ups SET ${setClause} WHERE id = $1 RETURNING *`,
-    [id, ...values],
+  const db = await getDb();
+  if (!Object.keys(updates).length) return null;
+  return db.collection<DbFollowUp>('follow_ups').findOneAndUpdate(
+    { id },
+    { $set: updates },
+    { returnDocument: 'after' },
   );
-  return result?.rows?.[0] || null;
 }
 
 export async function getPendingFollowUpCount(): Promise<number> {
-  const result = await query('SELECT COUNT(*) AS count FROM follow_ups WHERE done_at IS NULL');
-  return result?.rows?.[0]?.count || 0;
+  const db = await getDb();
+  return db.collection<DbFollowUp>('follow_ups').countDocuments({ done_at: null });
 }

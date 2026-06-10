@@ -1,4 +1,5 @@
-import { query } from './db';
+import { getDb } from './db';
+import crypto from 'crypto';
 
 export type DbDemo = {
   id: string;
@@ -19,47 +20,120 @@ export type CreateDemoInput = {
 };
 
 export async function createDemo(input: CreateDemoInput): Promise<DbDemo | null> {
-  const result = await query(
-    `INSERT INTO demos (prospect_id, product, scheduled_at, notes) VALUES ($1,$2,$3,$4) RETURNING *`,
-    [input.prospectId, input.product || 'RESTO', input.scheduledAt, input.notes || ''],
-  );
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const doc: DbDemo = {
+    id: crypto.randomUUID(),
+    prospect_id: input.prospectId,
+    product: input.product || 'RESTO',
+    scheduled_at: input.scheduledAt,
+    status: 'AGENDADA',
+    notes: input.notes || '',
+    created_at: now,
+    updated_at: now,
+  };
+  await db.collection('demos').insertOne(doc);
+  return doc;
 }
 
 export async function getDemoById(id: string): Promise<DbDemo | null> {
-  const result = await query('SELECT * FROM demos WHERE id = $1', [id]);
-  return result?.rows?.[0] || null;
+  const db = await getDb();
+  const doc = await db.collection<DbDemo>('demos').findOne({ id });
+  return doc || null;
 }
 
 export async function getDemosForProspect(prospectId: string): Promise<DbDemo[]> {
-  const result = await query('SELECT * FROM demos WHERE prospect_id = $1 ORDER BY scheduled_at DESC', [prospectId]);
-  return result?.rows || [];
+  const db = await getDb();
+  return db
+    .collection<DbDemo>('demos')
+    .find({ prospect_id: prospectId })
+    .sort({ scheduled_at: -1 })
+    .toArray();
 }
 
-export async function getTodaysDemos(): Promise<Array<DbDemo & { business_name: string; phone: string; rubro: string; ciudad: string }>> {
-  const result = await query(
-    `SELECT d.*, p.business_name, p.phone, p.rubro, p.ciudad FROM demos d JOIN prospects p ON p.id = d.prospect_id WHERE d.scheduled_at::date = CURRENT_DATE ORDER BY d.scheduled_at ASC`,
-  );
-  return result?.rows || [];
+export async function getTodaysDemos(): Promise<
+  Array<DbDemo & { business_name: string; phone: string; rubro: string; ciudad: string }>
+> {
+  const db = await getDb();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const pipeline = [
+    {
+      $match: {
+        scheduled_at: {
+          $gte: todayStart.toISOString(),
+          $lte: todayEnd.toISOString(),
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: 'prospects',
+        localField: 'prospect_id',
+        foreignField: 'id',
+        as: 'prospect',
+      },
+    },
+    { $unwind: { path: '$prospect', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        business_name: '$prospect.business_name',
+        phone: '$prospect.phone',
+        rubro: '$prospect.rubro',
+        ciudad: '$prospect.ciudad',
+      },
+    },
+    { $project: { prospect: 0 } },
+    { $sort: { scheduled_at: 1 } },
+  ];
+  return db.collection('demos').aggregate(pipeline).toArray() as any;
 }
 
-export async function getOverdueDemos(): Promise<Array<DbDemo & { business_name: string; phone: string }>> {
-  const result = await query(
-    `SELECT d.*, p.business_name, p.phone FROM demos d JOIN prospects p ON p.id = d.prospect_id WHERE d.status = 'AGENDADA' AND d.scheduled_at < NOW() ORDER BY d.scheduled_at ASC LIMIT 10`,
-  );
-  return result?.rows || [];
+export async function getOverdueDemos(): Promise<
+  Array<DbDemo & { business_name: string; phone: string }>
+> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const pipeline = [
+    {
+      $match: {
+        status: 'AGENDADA',
+        scheduled_at: { $lt: now },
+      },
+    },
+    {
+      $lookup: {
+        from: 'prospects',
+        localField: 'prospect_id',
+        foreignField: 'id',
+        as: 'prospect',
+      },
+    },
+    { $unwind: { path: '$prospect', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        business_name: '$prospect.business_name',
+        phone: '$prospect.phone',
+      },
+    },
+    { $project: { prospect: 0 } },
+    { $sort: { scheduled_at: 1 } },
+    { $limit: 10 },
+  ];
+  return db.collection('demos').aggregate(pipeline).toArray() as any;
 }
 
 export async function updateDemo(id: string, updates: Record<string, unknown>): Promise<DbDemo | null> {
+  const db = await getDb();
   const keys = Object.keys(updates);
   if (!keys.length) return null;
-  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const values = keys.map((k) => updates[k]);
-  const result = await query(
-    `UPDATE demos SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-    [id, ...values],
-  );
-  return result?.rows?.[0] || null;
+  await db
+    .collection('demos')
+    .updateOne({ id }, { $set: { ...updates, updated_at: new Date().toISOString() } });
+  const doc = await db.collection<DbDemo>('demos').findOne({ id });
+  return doc || null;
 }
 
 export async function markDemoDone(id: string, status: string): Promise<DbDemo | null> {
